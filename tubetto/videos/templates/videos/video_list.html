@@ -1,0 +1,14 @@
+<!doctype html>
+<html>
+  <head><title>Video Whitelist</title></head>
+  <body>
+    <h1>Video disponibili</h1>
+    <ul>
+      {% for v in videos %}
+        <li><a href="{% url 'video_detail' v.yt_video_id %}">{{ v.title }}</a></li>
+      {% empty %}
+        <li>Nessun video disponibile</li>
+      {% endfor %}
+    </ul>
+  </body>
+</html>
