@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>{{ video.title }}</h1>
+<p>Comments (approved)</p>
+<ul>
+  {% for c in comments %}
+    <li>
+      <strong>{{ c.author|default:"Anonymous" }}</strong>
+      <small>{{ c.published }}</small>
+      <div>{{ c.text }}</div>
+      <small>Likes: {{ c.like_count }}</small>
+    </li>
+  {% empty %}
+    <li>No comments.</li>
+  {% endfor %}
+</ul>
+<p><a href="{% url 'video_detail' video.yt_video_id %}">Back to video</a></p>
+{% endblock %}

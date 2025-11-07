@@ -16,7 +16,7 @@ class KeycloakOIDCBackend(OIDCAuthenticationBackend):
         # I ruoli Keycloak arrivano in "realm_access"
         roles = claims.get("realm_access", {}).get("roles", [])
         # Assicurati che i gruppi esistano in Django
-        for role in ["admin", "user"]:
+        for role in ["admin", "user", "power-user"]:
             Group.objects.get_or_create(name=role)
         # Svuota i gruppi attuali
         user.groups.clear()

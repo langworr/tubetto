@@ -20,6 +20,6 @@ from django.urls import path, include
 urlpatterns = [
     path('admin/', admin.site.urls),
     path('', include('videos.urls')),
-    path('oidc/', include('mozilla_django_oidc.urls')),  # se usi mozilla-django-oidc
+    path('oidc/', include('mozilla_django_oidc.urls')),
 ]
 

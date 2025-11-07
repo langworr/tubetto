@@ -1,14 +1,42 @@
-<!doctype html>
-<html>
-  <head><title>Video Whitelist</title></head>
-  <body>
-    <h1>Video disponibili</h1>
-    <ul>
-      {% for v in videos %}
-        <li><a href="{% url 'video_detail' v.yt_video_id %}">{{ v.title }}</a></li>
-      {% empty %}
-        <li>Nessun video disponibile</li>
-      {% endfor %}
-    </ul>
-  </body>
-</html>
+{% extends "base.html" %}
+{% block content %}
+<h1>Available Videos</h1>
+<table style="width:100%; border-collapse: collapse;">
+  <thead>
+    <tr style="text-align:left; border-bottom: 1px solid #ccc;">
+      <th style="padding: 0.5rem;">Title</th>
+      <th style="padding: 0.5rem;">Duration</th>
+      <th style="padding: 0.5rem;">Upload Date</th>
+      <th style="padding: 0.5rem;">Channel</th>
+      <th style="padding: 0.5rem;">Uploader</th>
+    </tr>
+  </thead>
+  <tbody>
+  {% for v in videos %}
+    <tr style="border-bottom: 1px solid #eee;">
+      <td style="padding: 0.5rem;"><a href="{% url 'video_detail' v.yt_video_id %}">{{ v.title }}</a></td>
+      <td style="padding: 0.5rem;">{{ v.duration_display|default:"—" }}</td>
+      <td style="padding: 0.5rem;">
+        {% if v.upload_date %}
+          {{ v.upload_date|date:"Y-m-d" }}
+        {% else %}
+          —
+        {% endif %}
+      </td>
+      <td style="padding: 0.5rem;">
+        {% if v.channel_title %}
+          {{ v.channel_title }}
+        {% elif v.channel %}
+          {{ v.channel.title }}
+        {% else %}
+          —
+        {% endif %}
+      </td>
+      <td style="padding: 0.5rem;">{{ v.uploader|default:"—" }}</td>
+    </tr>
+  {% empty %}
+    <tr><td colspan="5" style="padding:0.5rem;">No videos available.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

@@ -1,0 +1,98 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>{{ video.title }}</h1>
+{% if video.thumbnail %}
+  <img src="{{ video.thumbnail }}" alt="{{ video.title }}" style="max-width: 320px; height: auto;"/>
+{% endif %}
+
+<video id="player" controls style="width: 100%; max-width: 800px;"></video>
+
+<section style="margin-top: 1rem;">
+  <h2>Metadata</h2>
+  <table style="width:100%; max-width: 640px; border-collapse: collapse;">
+    <tbody>
+      <tr>
+        <th style="text-align:left; padding:0.4rem;">Video ID</th>
+        <td style="padding:0.4rem;">{{ video.yt_video_id }}</td>
+      </tr>
+      <tr>
+        <th style="text-align:left; padding:0.4rem;">Duration</th>
+        <td style="padding:0.4rem;">{{ video.duration_display|default:"—" }}</td>
+      </tr>
+      <tr>
+        <th style="text-align:left; padding:0.4rem;">Upload Date</th>
+        <td style="padding:0.4rem;">{{ video.upload_date|date:"Y-m-d" }}</td>
+      </tr>
+      <tr>
+        <th style="text-align:left; padding:0.4rem;">Channel</th>
+        <td style="padding:0.4rem;">
+          {% if video.channel_title %}
+            {{ video.channel_title }}
+          {% elif video.channel %}
+            {{ video.channel.title }}
+          {% else %}
+            —
+          {% endif %}
+          {% if video.channel_external_id %}
+            <span style="color:#666;">({{ video.channel_external_id }})</span>
+          {% endif %}
+        </td>
+      </tr>
+      <tr>
+        <th style="text-align:left; padding:0.4rem;">Uploader</th>
+        <td style="padding:0.4rem;">
+          {{ video.uploader|default:"—" }}
+          {% if video.uploader_id %}
+            <span style="color:#666;">({{ video.uploader_id }})</span>
+          {% endif %}
+        </td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+
+{% if video.description %}
+<section style="margin-top: 1.5rem;">
+  <h2>Description</h2>
+  <div style="white-space: pre-wrap; border: 1px solid #eee; padding: 0.75rem; background-color: #fafafa;">
+    {{ video.description }}
+  </div>
+</section>
+{% endif %}
+
+<!-- Comments and suggestions removed by requirement -->
+
+{% if stream.stream_type == 'progressive' %}
+  <script>
+    (function() {
+      var video = document.getElementById('player');
+      video.src = '/stream/{{ video.yt_video_id }}/file';
+    })();
+  </script>
+{% elif stream.stream_type == 'hls' %}
+  <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+  <script>
+    (function() {
+      var video = document.getElementById('player');
+      var src = '/stream/{{ video.yt_video_id }}/master.m3u8';
+      if (Hls.isSupported()) {
+        var hls = new Hls();
+        hls.loadSource(src);
+        hls.attachMedia(video);
+      } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+        video.src = src;
+      }
+    })();
+  </script>
+{% elif stream.stream_type == 'dash' %}
+  <script src="https://cdn.dashjs.org/latest/dash.all.min.js"></script>
+  <script>
+    (function() {
+      var video = document.getElementById('player');
+      var url = '{{ stream.manifest_url }}';
+      var player = dashjs.MediaPlayer().create();
+      player.initialize(video, url, true);
+    })();
+  </script>
+{% endif %}
+{% endblock %}
