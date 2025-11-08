@@ -4,6 +4,7 @@ from . import views
 urlpatterns = [
     path('', views.video_list, name='video_list'),
     path('watch/<str:video_id>/', views.video_detail, name='video_detail'),
+    path('scheduled-task/', views.scheduled_task, name='scheduled_task'),
 
     # Streaming proxy
     path('stream/<str:video_id>/master.m3u8', views.hls_manifest, name='hls_manifest'),

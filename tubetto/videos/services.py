@@ -166,22 +166,35 @@ def resolve_related_videos(video_id: str, limit: int = 12) -> list[dict]:
     return results
 
 
-def list_channel_videos_flat(channel_id: str, limit: int = 200) -> List[Dict]:
+def list_channel_videos_flat(channel_id: str, limit: Optional[int] = None) -> List[Dict]:
     """Return a flat list of videos for a YouTube channel using yt-dlp --flat-playlist.
     channel_id is the YouTube channel id (e.g., UCxxxx...).
+    If limit is None, fetches all videos from the channel.
     """
-    cached = _cache_get(f"chflat:{channel_id}:{limit}")
+    cache_key = f"chflat:{channel_id}:{limit if limit else 'all'}"
+    cached = _cache_get(cache_key)
     if cached is not None:
         return cached
-    url = f"https://www.youtube.com/channel/{channel_id}/videos"
+    # Use the channel's videos page - yt-dlp will handle pagination
+    url = f"https://www.youtube.com/c/{channel_id}/videos"
     cmd = [
         "yt-dlp", "-J", "--no-warnings", "--flat-playlist",
-        url,
     ]
-    proc = subprocess.run(cmd, capture_output=True, text=True)
+    # If limit is None, fetch all videos by setting playlist-end to -1
+    # This tells yt-dlp to fetch all available videos
+    if limit is None:
+        cmd.extend(["--playlist-end", "-1"])
+    else:
+        cmd.extend(["--playlist-end", str(limit)])
+    cmd.append(url)
+    proc = subprocess.run(cmd, capture_output=True, text=True, check=False)
     if proc.returncode != 0:
+        # Return empty list on error - errors are handled by the caller
         return []
-    data = json.loads(proc.stdout)
+    try:
+        data = json.loads(proc.stdout)
+    except json.JSONDecodeError:
+        return []
     entries = data.get("entries") or []
     results: List[Dict] = []
     for e in entries:
@@ -192,10 +205,194 @@ def list_channel_videos_flat(channel_id: str, limit: int = 200) -> List[Dict]:
             "yt_video_id": vid,
             "title": e.get("title") or "",
         })
-        if len(results) >= limit:
+        # Only break if we have a limit and reached it
+        if limit and len(results) >= limit:
             break
-    _cache_set(f"chflat:{channel_id}:{limit}", results, ttl=300)
+    _cache_set(cache_key, results, ttl=300)
     return results
+
+
+def resolve_channel_metadata(channel_id: str) -> Dict[str, Optional[str]]:
+    """Fetch channel metadata using yt-dlp."""
+    url = f"https://www.youtube.com/channel/{channel_id}"
+    cmd = [
+        "yt-dlp",
+        "-J",
+        "--no-warnings",
+        "--skip-download",
+        url,
+    ]
+    proc = subprocess.run(cmd, capture_output=True, text=True)
+    if proc.returncode != 0:
+        return {}
+    data = json.loads(proc.stdout)
+    return {
+        "title": data.get("channel") or data.get("uploader") or "",
+        "description": data.get("description") or "",
+        "thumbnail": data.get("thumbnail") or "",
+        "subscriber_count": data.get("channel_follower_count") or None,
+        "video_count": data.get("playlist_count") or None,
+    }
+
+
+def update_channels_metadata() -> Dict[str, any]:
+    """Update metadata for all channels."""
+    from .models import Channel
+    
+    results = {
+        "channels_processed": 0,
+        "channels_updated": 0,
+        "channels_errors": [],
+    }
+    
+    channels = Channel.objects.all()
+    for channel in channels:
+        try:
+            meta = resolve_channel_metadata(channel.yt_channel_id)
+            changed = False
+            for field, value in meta.items():
+                if value is not None:
+                    current = getattr(channel, field, None)
+                    if current != value:
+                        setattr(channel, field, value)
+                        changed = True
+            if changed:
+                channel.save()
+                results["channels_updated"] += 1
+            results["channels_processed"] += 1
+        except Exception as e:
+            results["channels_errors"].append(f"{channel.yt_channel_id}: {str(e)}")
+    
+    return results
+
+
+def scan_channel_videos() -> Dict[str, any]:
+    """Scan all videos in each channel and insert into videos table with full metadata."""
+    from .models import Channel, Video, ChannelVideo
+    
+    results = {
+        "channels_scanned": 0,
+        "videos_scanned": 0,
+        "videos_created": 0,
+        "videos_updated": 0,
+        "errors": [],
+    }
+    
+    channels = Channel.objects.all()
+    for channel in channels:
+        try:
+            # Clear cache for this channel to ensure fresh data
+            cache_key = f"chflat:{channel.yt_channel_id}:all"
+            if cache_key in _CACHE:
+                del _CACHE[cache_key]
+            
+            # Fetch all videos from the channel (no limit)
+            vids = list_channel_videos_flat(channel.yt_channel_id, limit=None)
+            if not vids:
+                results["errors"].append(f"Channel {channel.yt_channel_id}: No videos found or error fetching videos")
+                continue
+            results["videos_scanned"] += len(vids)
+            
+            for v in vids:
+                try:
+                    # Create/update ChannelVideo entry
+                    chv, _ = ChannelVideo.objects.get_or_create(
+                        channel=channel,
+                        yt_video_id=v["yt_video_id"],
+                        defaults={"title": v.get("title", "")},
+                    )
+                    if v.get("title") and chv.title != v["title"]:
+                        chv.title = v["title"]
+                        chv.save(update_fields=["title"])
+                    
+                    # Create/update Video entry with full metadata
+                    vid_obj, created = Video.objects.get_or_create(
+                        yt_video_id=v["yt_video_id"],
+                        defaults={
+                            "title": v.get("title", v["yt_video_id"]),
+                            "channel": channel,
+                        },
+                    )
+                    
+                    if created:
+                        results["videos_created"] += 1
+                    
+                    # Fetch and update full metadata for the video
+                    try:
+                        info = resolve_video_info(v["yt_video_id"])
+                        meta = metadata_from_info(info)
+                        changed = False
+                        for field, value in meta.items():
+                            if value is None:
+                                continue
+                            if getattr(vid_obj, field) != value:
+                                setattr(vid_obj, field, value)
+                                changed = True
+                        if not vid_obj.channel:
+                            vid_obj.channel = channel
+                            changed = True
+                        if v.get("title") and vid_obj.title != v["title"]:
+                            vid_obj.title = v["title"]
+                            changed = True
+                        if changed:
+                            vid_obj.save()
+                            if not created:
+                                results["videos_updated"] += 1
+                    except Exception as e:
+                        results["errors"].append(f"Video {v.get('yt_video_id')} metadata: {str(e)}")
+                        
+                except Exception as e:
+                    results["errors"].append(f"Video {v.get('yt_video_id')}: {str(e)}")
+            results["channels_scanned"] += 1
+        except Exception as e:
+            results["errors"].append(f"Channel {channel.yt_channel_id} scan: {str(e)}")
+    
+    return results
+
+
+def update_videos_metadata() -> Dict[str, any]:
+    """Update metadata for all videos."""
+    from .models import Video
+    
+    results = {
+        "videos_processed": 0,
+        "videos_updated": 0,
+        "errors": [],
+    }
+    
+    all_videos = Video.objects.all()
+    for video in all_videos:
+        try:
+            info = resolve_video_info(video.yt_video_id)
+            meta = metadata_from_info(info)
+            changed = False
+            for field, value in meta.items():
+                if value is not None:
+                    current = getattr(video, field, None)
+                    if current != value:
+                        setattr(video, field, value)
+                        changed = True
+            if changed:
+                video.save()
+                results["videos_updated"] += 1
+            results["videos_processed"] += 1
+        except Exception as e:
+            results["errors"].append(f"Video {video.yt_video_id}: {str(e)}")
+    
+    return results
+
+
+def run_scheduled_task() -> Dict[str, any]:
+    """Run all scheduled tasks in sequence."""
+    channel_results = update_channels_metadata()
+    scan_results = scan_channel_videos()
+    video_results = update_videos_metadata()
+    
+    return {
+        "channels": channel_results,
+        "scan": scan_results,
+        "videos": video_results,
+    }
 
 
 def metadata_from_info(data: dict) -> Dict[str, Optional[str]]:

@@ -1,12 +1,15 @@
 from django.http import HttpResponse, HttpResponseForbidden
 from django.http import StreamingHttpResponse
-from django.contrib.auth.decorators import login_required
+from django.contrib.auth.decorators import login_required, user_passes_test
 from .models import Video
-from .services import resolve_stream_manifest, resolve_video_info, metadata_from_info
+from .services import (
+    resolve_stream_manifest, resolve_video_info, metadata_from_info,
+    run_scheduled_task, update_channels_metadata, scan_channel_videos, update_videos_metadata
+)
 import requests
 from urllib.parse import urljoin, urlencode
 
-from django.shortcuts import render, get_object_or_404
+from django.shortcuts import render, get_object_or_404, redirect
 
 
 def _is_video_allowed(video: Video) -> bool:
@@ -175,3 +178,35 @@ def hls_key(request, video_id):
         if h in upstream.headers:
             resp[h] = upstream.headers[h]
     return resp
+
+
+def _is_admin(user):
+    """Check if user is admin or superuser."""
+    return user.is_authenticated and (user.is_superuser or user.groups.filter(name__in=["admin"]).exists())
+
+
+@login_required
+@user_passes_test(_is_admin)
+def scheduled_task(request):
+    """Admin-only page to run scheduled tasks."""
+    results = None
+    task_name = None
+    
+    if request.method == 'POST':
+        if 'update_channels' in request.POST:
+            results = update_channels_metadata()
+            task_name = "Update Channels Metadata"
+        elif 'scan_videos' in request.POST:
+            results = scan_channel_videos()
+            task_name = "Scan Channel Videos"
+        elif 'update_videos_metadata' in request.POST:
+            results = update_videos_metadata()
+            task_name = "Update Videos Metadata"
+        elif 'run_all' in request.POST:
+            results = run_scheduled_task()
+            task_name = "All Tasks"
+    
+    return render(request, "videos/scheduled_task.html", {
+        "results": results,
+        "task_name": task_name,
+    })

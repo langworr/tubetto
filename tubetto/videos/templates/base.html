@@ -1,22 +1,111 @@
 <!doctype html>
-<html>
+<html lang="en">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>{% block title %}Tubetto{% endblock %}</title>
     <style>
-      body { font-family: system-ui, sans-serif; margin: 1.5rem; }
-      header { margin-bottom: 1rem; }
-      nav a { margin-right: .75rem; }
-      .container { max-width: 1000px; margin: 0 auto; }
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      body {
+        font-family: system-ui, -apple-system, sans-serif;
+        line-height: 1.6;
+        color: #333;
+        background-color: #f5f5f5;
+      }
+      .header {
+        background-color: #2c3e50;
+        color: white;
+        padding: 1rem 0;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+      }
+      .header-content {
+        max-width: 1200px;
+        margin: 0 auto;
+        padding: 0 1.5rem;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+      .header h1 {
+        font-size: 1.5rem;
+        font-weight: 600;
+      }
+      .header h1 a {
+        color: white;
+        text-decoration: none;
+      }
+      .header h1 a:hover {
+        opacity: 0.9;
+      }
+      .nav-menu {
+        display: flex;
+        gap: 1.5rem;
+        list-style: none;
+      }
+      .nav-menu li a {
+        color: white;
+        text-decoration: none;
+        padding: 0.5rem 1rem;
+        border-radius: 4px;
+        transition: background-color 0.2s;
+      }
+      .nav-menu li a:hover {
+        background-color: rgba(255, 255, 255, 0.1);
+      }
+      .nav-menu li a.active {
+        background-color: rgba(255, 255, 255, 0.2);
+      }
+      .container {
+        max-width: 1200px;
+        margin: 0 auto;
+        padding: 2rem 1.5rem;
+        background-color: white;
+        min-height: calc(100vh - 80px);
+        box-shadow: 0 0 10px rgba(0,0,0,0.05);
+      }
+      .footer {
+        background-color: #2c3e50;
+        color: white;
+        text-align: center;
+        padding: 1rem;
+        margin-top: 2rem;
+      }
     </style>
   </head>
   <body>
-    <div class="container">
-      <header>
-        <h2><a href="/">Tubetto</a></h2>
-      </header>
+    <header class="header">
+      <div class="header-content">
+        <h1><a href="{% url 'video_list' %}">Tubetto</a></h1>
+        <nav>
+          <ul class="nav-menu">
+            <li><a href="{% url 'video_list' %}">Videos</a></li>
+            <li><a href="#">Channels</a></li>
+            {% if user.is_authenticated %}
+              {% if user.is_superuser %}
+                <li><a href="{% url 'scheduled_task' %}">Scheduled Task</a></li>
+              {% else %}
+                {% for group in user.groups.all %}
+                  {% if group.name == 'admin' %}
+                    <li><a href="{% url 'scheduled_task' %}">Scheduled Task</a></li>
+                  {% endif %}
+                {% endfor %}
+              {% endif %}
+            {% endif %}
+            <li><a href="#">Settings</a></li>
+            <li><a href="#">Profile</a></li>
+          </ul>
+        </nav>
+      </div>
+    </header>
+    <main class="container">
       {% block content %}{% endblock %}
-    </div>
+    </main>
+    <footer class="footer">
+      <p>&copy; 2025 Tubetto. All rights reserved.</p>
+    </footer>
   </body>
 </html>

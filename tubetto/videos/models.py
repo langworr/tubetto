@@ -1,14 +1,21 @@
 from django.db import models
+from django.utils import timezone
 from django.contrib.auth import get_user_model
 
 User = get_user_model()
 
 class Channel(models.Model):
     """
-    Rappresenta un canale YouTube.
+    Rappresenta un canale YouTube con metadata.
     """
     title = models.CharField(max_length=255, blank=True)
     yt_channel_id = models.CharField(max_length=128, unique=True)
+    description = models.TextField(blank=True)
+    thumbnail = models.URLField(blank=True)
+    subscriber_count = models.PositiveIntegerField(null=True, blank=True)
+    video_count = models.PositiveIntegerField(null=True, blank=True)
+    created_at = models.DateTimeField(default=timezone.now)
+    updated_at = models.DateTimeField(auto_now=True)
 
     def __str__(self):
         return str(self.title or self.yt_channel_id)
