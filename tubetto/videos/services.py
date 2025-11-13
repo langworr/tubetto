@@ -3,7 +3,7 @@ import subprocess
 import json
 import time
 from datetime import datetime
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Any
 
 _CACHE = {}  # {video_id: (expires_epoch, data)}
 
@@ -67,6 +67,54 @@ def resolve_audio_stream(video_id: str) -> dict:
         "ext": audio.get("ext"),
         "acodec": audio.get("acodec"),
     }
+
+
+def update_music_tracks_metadata() -> Dict[str, Any]:
+    """Update metadata for all music tracks using yt-dlp."""
+    from .models import MusicTrack
+
+    results: Dict[str, Any] = {
+        "tracks_processed": 0,
+        "tracks_updated": 0,
+        "errors": [],
+    }
+
+    tracks = MusicTrack.objects.all()
+    for track in tracks:
+        try:
+            info = resolve_video_info(track.yt_video_id)
+            duration = info.get("duration")
+            if isinstance(duration, float):
+                duration = int(duration)
+            elif isinstance(duration, str):
+                try:
+                    duration = int(float(duration))
+                except ValueError:
+                    duration = None
+
+            metadata_updates = {
+                "title": info.get("title") or track.title,
+                "artist": info.get("artist") or info.get("uploader") or track.artist,
+                "album": info.get("album") or track.album,
+                "duration": duration if duration is not None else track.duration,
+            }
+
+            changed = False
+            for field, value in metadata_updates.items():
+                current = getattr(track, field)
+                if value is not None and value != current:
+                    setattr(track, field, value)
+                    changed = True
+
+            if changed:
+                track.save()
+                results["tracks_updated"] += 1
+            results["tracks_processed"] += 1
+
+        except (RuntimeError, ValueError, TypeError) as exc:  # pragma: no cover - defensive
+            results["errors"].append(f"{track.yt_video_id}: {exc}")
+
+    return results
 
 def _select_progressive(formats: list[dict]) -> dict | None:
     progressive = []
@@ -420,11 +468,13 @@ def run_scheduled_task() -> Dict[str, any]:
     channel_results = update_channels_metadata()
     scan_results = scan_channel_videos()
     video_results = update_videos_metadata()
+    music_results = update_music_tracks_metadata()
     
     return {
         "channels": channel_results,
         "scan": scan_results,
         "videos": video_results,
+        "music": music_results,
     }
 
 

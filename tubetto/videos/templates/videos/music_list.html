@@ -3,7 +3,8 @@
 <h1>Music Library</h1>
 <p>
   <a href="{% url 'video_list' %}">Videos without channel</a> |
-  <a href="{% url 'channel_list' %}">Channels</a>
+  <a href="{% url 'channel_list' %}">Channels</a> |
+  <a href="{% url 'music_playlist_list' %}">Playlists</a>
 </p>
 <table style="width:100%; border-collapse: collapse;">
   <thead>
@@ -25,11 +26,11 @@
       </td>
       <td style="padding: 0.5rem;">{{ track.artist|default:"—" }}</td>
       <td style="padding: 0.5rem;">{{ track.album|default:"—" }}</td>
-      <td style="padding: 0.5rem;">{{ track.duration_display|default:"—" }}</td>
       <td style="padding: 0.5rem;">{{ track.yt_video_id }}</td>
+      <td style="padding: 0.5rem;">{{ track.duration_display|default:"—" }}</td>
     </tr>
   {% empty %}
-    <tr><td colspan="4" style="padding:0.5rem;">No music tracks available.</td></tr>
+    <tr><td colspan="5" style="padding:0.5rem;">No music tracks available.</td></tr>
   {% endfor %}
   </tbody>
 </table>

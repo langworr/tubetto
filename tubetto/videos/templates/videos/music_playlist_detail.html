@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>{{ playlist.title }}</h1>
+<p>
+  <a href="{% url 'music_playlist_list' %}">Back to playlists</a> |
+  <a href="{% url 'music_list' %}">Music tracks</a>
+</p>
+
+{% if playlist.description %}
+  <p>{{ playlist.description }}</p>
+{% endif %}
+
+{% if entries %}
+  <section style="margin-bottom: 1.5rem;">
+    <p><strong>Total tracks:</strong> {{ entries|length }}</p>
+    <p><strong>Playlist stream:</strong> <a href="{{ playlist_stream_url }}">M3U stream</a></p>
+    <audio controls autoplay style="width:100%;">
+      <source src="{{ playlist_stream_url }}" type="audio/mpegurl">
+      <source src="{{ playlist_stream_url }}" type="application/x-mpegURL">
+      Your browser does not support the audio element.
+    </audio>
+  </section>
+
+  <table style="width:100%; border-collapse: collapse;">
+    <thead>
+      <tr style="text-align:left; border-bottom: 1px solid #ccc;">
+        <th style="padding: 0.5rem;">#</th>
+        <th style="padding: 0.5rem;">Title</th>
+        <th style="padding: 0.5rem;">Artist</th>
+        <th style="padding: 0.5rem;">Duration</th>
+        <th style="padding: 0.5rem;">Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for entry in entries %}
+      <tr style="border-bottom: 1px solid #eee;">
+        <td style="padding: 0.5rem;">{{ entry.position }}</td>
+        <td style="padding: 0.5rem;">{{ entry.track.title }}</td>
+        <td style="padding: 0.5rem;">{{ entry.track.artist|default:"—" }}</td>
+        <td style="padding: 0.5rem;">{{ entry.track.duration_display|default:"—" }}</td>
+        <td style="padding: 0.5rem;">
+          <a href="{% url 'music_detail' entry.track.id %}">Details</a> |
+          <a href="{% url 'music_stream' entry.track.id %}">Stream</a>
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+{% else %}
+  <p>No tracks in this playlist yet.</p>
+{% endif %}
+{% endblock %}
+

@@ -1,11 +1,12 @@
 from django.http import HttpResponse, HttpResponseForbidden
 from django.http import StreamingHttpResponse
 from django.contrib.auth.decorators import login_required, user_passes_test
-from .models import Video, Channel, MusicTrack
+from django.db.models import Count, Prefetch
+from .models import Video, Channel, MusicTrack, MusicPlaylist, MusicPlaylistTrack
 from .services import (
     resolve_stream_manifest, resolve_video_info, metadata_from_info,
     run_scheduled_task, update_channels_metadata, scan_channel_videos, update_videos_metadata,
-    resolve_audio_stream
+    resolve_audio_stream, update_music_tracks_metadata
 )
 import requests
 from urllib.parse import urljoin, urlencode
@@ -14,7 +15,7 @@ from django.shortcuts import render, get_object_or_404
 from django.urls import reverse
 
 
-def _is_video_allowed(video: Video) -> bool:
+def _is_video_allowed(_video: Video) -> bool:
     # All videos present in DB are viewable regardless of whitelist.
     return True
 
@@ -80,10 +81,10 @@ def channel_detail(request, channel_id):
 
 
 @login_required
-def music_list(request):
+def music_list(_request):
     tracks = MusicTrack.objects.all().order_by('title', 'artist')
     return render(
-        request,
+        _request,
         "videos/music_list.html",
         {
             "tracks": tracks,
@@ -92,13 +93,13 @@ def music_list(request):
 
 
 @login_required
-def music_detail(request, track_id):
+def music_detail(_request, track_id):
     track = get_object_or_404(MusicTrack, pk=track_id)
     stream_url = reverse("music_stream", args=[track.id])
     content_type = "audio/mpeg"
 
     return render(
-        request,
+        _request,
         "videos/music_detail.html",
         {
             "track": track,
@@ -109,7 +110,7 @@ def music_detail(request, track_id):
 
 
 @login_required
-def music_stream(request, track_id):
+def music_stream(_request, track_id):
     track = get_object_or_404(MusicTrack, pk=track_id)
     # Resolve fresh audio-only stream via yt-dlp and proxy it
     audio = resolve_audio_stream(track.yt_video_id)
@@ -122,6 +123,65 @@ def music_stream(request, track_id):
         if header in upstream.headers:
             resp[header] = upstream.headers[header]
     return resp
+
+
+@login_required
+def music_playlist_list(_request):
+    playlists = (
+        MusicPlaylist.objects.annotate(track_total=Count("entries"))
+        .order_by("title", "created_at")
+    )
+    return render(
+        _request,
+        "videos/music_playlist_list.html",
+        {
+            "playlists": playlists,
+        },
+    )
+
+
+@login_required
+def music_playlist_detail(_request, playlist_id):
+    playlist_qs = MusicPlaylist.objects.prefetch_related(
+        Prefetch(
+            "entries",
+            queryset=MusicPlaylistTrack.objects.select_related("track").order_by("position", "added_at"),
+        )
+    )
+    playlist = get_object_or_404(playlist_qs, pk=playlist_id)
+    entries = list(playlist.entries.all())
+    stream_url = reverse("music_playlist_stream", args=[playlist.id])
+    return render(
+        _request,
+        "videos/music_playlist_detail.html",
+        {
+            "playlist": playlist,
+            "entries": entries,
+            "playlist_stream_url": stream_url,
+        },
+    )
+
+
+@login_required
+def music_playlist_stream(request, playlist_id):
+    playlist_qs = MusicPlaylist.objects.prefetch_related(
+        Prefetch(
+            "entries",
+            queryset=MusicPlaylistTrack.objects.select_related("track").order_by("position", "added_at"),
+        )
+    )
+    playlist = get_object_or_404(playlist_qs, pk=playlist_id)
+    lines = ["#EXTM3U"]
+    entries = list(playlist.entries.all())
+    for entry in entries:
+        track = entry.track
+        duration = track.duration if track.duration is not None else -1
+        title = track.title
+        stream_url = request.build_absolute_uri(reverse("music_stream", args=[track.id]))
+        lines.append(f"#EXTINF:{duration},{title}")
+        lines.append(stream_url)
+    content = "\n".join(lines)
+    return HttpResponse(content, content_type="audio/x-mpegurl")
 
 
 @login_required
@@ -170,7 +230,7 @@ def hls_segment(request, video_id):
 
 
 @login_required
-def hls_manifest(request, video_id):
+def hls_manifest(_request, video_id):
     v = Video.objects.filter(yt_video_id=video_id).first()
     if not v or not _is_video_allowed(v):
         return HttpResponseForbidden("Not allowed")
@@ -207,7 +267,7 @@ def hls_manifest(request, video_id):
         s = line.strip()
         if s.startswith('#EXT-X-KEY') and 'URI=' in s:
             try:
-                prefix, rest = s.split('URI=', 1)
+                _prefix, rest = s.split('URI=', 1)
                 if rest.startswith('"'):
                     uri_part = rest.split('"', 2)[1]
                 else:
@@ -219,7 +279,7 @@ def hls_manifest(request, video_id):
                 else:
                     newline = s.replace(f'URI={uri_part}', f'URI={proxied}')
                 rewritten.append(newline)
-            except Exception:
+            except (ValueError, IndexError, KeyError):
                 rewritten.append(line)
             continue
         if s.startswith('#') or not s:
@@ -273,6 +333,9 @@ def scheduled_task(request):
         elif 'update_videos_metadata' in request.POST:
             results = update_videos_metadata()
             task_name = "Update Videos Metadata"
+        elif 'update_music_tracks' in request.POST:
+            results = update_music_tracks_metadata()
+            task_name = "Update Music Tracks Metadata"
         elif 'run_all' in request.POST:
             results = run_scheduled_task()
             task_name = "All Tasks"

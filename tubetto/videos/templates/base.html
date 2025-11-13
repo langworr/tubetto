@@ -85,6 +85,7 @@
             <li><a href="{% url 'video_list' %}">Videos</a></li>
             <li><a href="{% url 'channel_list' %}">Channels</a></li>
             <li><a href="{% url 'music_list' %}">Music</a></li>
+            <li><a href="{% url 'music_playlist_list' %}">Playlists</a></li>
             {% if user.is_authenticated %}
               {% if user.is_superuser %}
                 <li><a href="{% url 'scheduled_task' %}">Scheduled Task</a></li>

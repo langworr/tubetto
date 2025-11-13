@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import Video, Channel, ChannelVideo, MusicTrack
+from .models import Video, Channel, ChannelVideo, MusicTrack, MusicPlaylist, MusicPlaylistTrack
 from django.db import transaction
 from django.contrib import messages
 from .services import list_channel_videos_flat, resolve_video_info, metadata_from_info
@@ -132,4 +132,23 @@ class MusicTrackAdmin(admin.ModelAdmin):
     )
     readonly_fields = ("created_at", "updated_at")
 
+
+class MusicPlaylistTrackInline(admin.TabularInline):
+    model = MusicPlaylistTrack
+    extra = 1
+    autocomplete_fields = ("track",)
+    ordering = ("position",)
+
+
+@admin.register(MusicPlaylist)
+class MusicPlaylistAdmin(admin.ModelAdmin):
+    list_display = ("title", "description", "track_count", "created_at")
+    search_fields = ("title", "description")
+    inlines = [MusicPlaylistTrackInline]
+    readonly_fields = ("created_at", "updated_at")
+    ordering = ("title",)
+
+    def track_count(self, obj):
+        return obj.track_count()
+    track_count.short_description = "Tracks"
 
