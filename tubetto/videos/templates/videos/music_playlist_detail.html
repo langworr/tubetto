@@ -13,12 +13,11 @@
 {% if entries %}
   <section style="margin-bottom: 1.5rem;">
     <p><strong>Total tracks:</strong> {{ entries|length }}</p>
-    <p><strong>Playlist stream:</strong> <a href="{{ playlist_stream_url }}">M3U stream</a></p>
-    <audio controls autoplay style="width:100%;">
-      <source src="{{ playlist_stream_url }}" type="audio/mpegurl">
-      <source src="{{ playlist_stream_url }}" type="application/x-mpegURL">
-      Your browser does not support the audio element.
-    </audio>
+    <p style="margin-top:0.5rem;">
+      <a href="{{ playlist_stream_url }}" style="padding:0.5rem 1rem; background:#2ecc71; color:white; border-radius:4px; text-decoration:none;">Open player</a>
+      <a href="{{ playlist_shuffle_stream_url }}" style="padding:0.5rem 1rem; background:#9b59b6; color:white; border-radius:4px; text-decoration:none; margin-left:0.5rem;">Open shuffle player</a>
+      <a href="{{ playlist_stream_url }}?format=m3u" style="padding:0.5rem 1rem; background:#34495e; color:white; border-radius:4px; text-decoration:none; margin-left:0.5rem;">Download M3U</a>
+    </p>
   </section>
 
   <table style="width:100%; border-collapse: collapse;">

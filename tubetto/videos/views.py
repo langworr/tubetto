@@ -1,3 +1,5 @@
+import random
+
 from django.http import HttpResponse, HttpResponseForbidden
 from django.http import StreamingHttpResponse
 from django.contrib.auth.decorators import login_required, user_passes_test
@@ -151,6 +153,7 @@ def music_playlist_detail(_request, playlist_id):
     playlist = get_object_or_404(playlist_qs, pk=playlist_id)
     entries = list(playlist.entries.all())
     stream_url = reverse("music_playlist_stream", args=[playlist.id])
+    shuffle_stream_url = f"{stream_url}?shuffle=1"
     return render(
         _request,
         "videos/music_playlist_detail.html",
@@ -158,6 +161,7 @@ def music_playlist_detail(_request, playlist_id):
             "playlist": playlist,
             "entries": entries,
             "playlist_stream_url": stream_url,
+            "playlist_shuffle_stream_url": shuffle_stream_url,
         },
     )
 
@@ -171,17 +175,59 @@ def music_playlist_stream(request, playlist_id):
         )
     )
     playlist = get_object_or_404(playlist_qs, pk=playlist_id)
-    lines = ["#EXTM3U"]
     entries = list(playlist.entries.all())
-    for entry in entries:
+    if not entries:
+        return render(
+            request,
+            "videos/music_playlist_stream.html",
+            {
+                "playlist": playlist,
+                "tracks_payload": [],
+                "is_shuffle": False,
+            },
+        )
+
+    shuffle_requested = request.GET.get("shuffle") in {"1", "true", "yes"}
+    ordered_entries = entries[:]
+    if shuffle_requested:
+        random.shuffle(ordered_entries)
+
+    if request.GET.get("format") == "m3u":
+        lines = ["#EXTM3U"]
+        for entry in ordered_entries:
+            track = entry.track
+            duration = track.duration if track.duration is not None else -1
+            title = track.title if not track.artist else f"{track.title} — {track.artist}"
+            stream_url = request.build_absolute_uri(reverse("music_stream", args=[track.id]))
+            lines.append(f"#EXTINF:{duration},{title}")
+            lines.append(stream_url)
+        content = "\n".join(lines)
+        response = HttpResponse(content, content_type="audio/mpegurl")
+        response["Content-Disposition"] = 'inline; filename="playlist.m3u"'
+        return response
+
+    track_payload = []
+    for entry in ordered_entries:
         track = entry.track
-        duration = track.duration if track.duration is not None else -1
-        title = track.title
-        stream_url = request.build_absolute_uri(reverse("music_stream", args=[track.id]))
-        lines.append(f"#EXTINF:{duration},{title}")
-        lines.append(stream_url)
-    content = "\n".join(lines)
-    return HttpResponse(content, content_type="audio/x-mpegurl")
+        track_payload.append(
+            {
+                "id": track.id,
+                "title": track.title,
+                "artist": track.artist,
+                "duration": track.duration_display(),
+                "stream_url": request.build_absolute_uri(reverse("music_stream", args=[track.id])),
+            }
+        )
+
+    return render(
+        request,
+        "videos/music_playlist_stream.html",
+        {
+            "playlist": playlist,
+            "tracks_payload": track_payload,
+            "is_shuffle": shuffle_requested,
+        },
+    )
 
 
 @login_required
