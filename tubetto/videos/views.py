@@ -1,15 +1,17 @@
 from django.http import HttpResponse, HttpResponseForbidden
 from django.http import StreamingHttpResponse
 from django.contrib.auth.decorators import login_required, user_passes_test
-from .models import Video
+from .models import Video, Channel, MusicTrack
 from .services import (
     resolve_stream_manifest, resolve_video_info, metadata_from_info,
-    run_scheduled_task, update_channels_metadata, scan_channel_videos, update_videos_metadata
+    run_scheduled_task, update_channels_metadata, scan_channel_videos, update_videos_metadata,
+    resolve_audio_stream
 )
 import requests
 from urllib.parse import urljoin, urlencode
 
-from django.shortcuts import render, get_object_or_404, redirect
+from django.shortcuts import render, get_object_or_404
+from django.urls import reverse
 
 
 def _is_video_allowed(video: Video) -> bool:
@@ -50,8 +52,77 @@ def progressive_file(request, video_id):
 
 @login_required
 def video_list(request):
-    videos = Video.objects.all().order_by('-upload_date', '-created_at')
+    videos = Video.objects.filter(channel__isnull=True).order_by('-upload_date', '-created_at')
     return render(request, "videos/video_list.html", {"videos": videos})
+
+
+@login_required
+def channel_list(request):
+    channels = Channel.objects.all().order_by('title', 'yt_channel_id')
+    return render(request, "videos/channel_list.html", {"channels": channels})
+
+
+@login_required
+def channel_detail(request, channel_id):
+    channel = get_object_or_404(Channel, pk=channel_id)
+    videos = (
+        Video.objects.filter(channel=channel)
+        .order_by('-upload_date', '-created_at')
+    )
+    return render(
+        request,
+        "videos/channel_detail.html",
+        {
+            "channel": channel,
+            "videos": videos,
+        },
+    )
+
+
+@login_required
+def music_list(request):
+    tracks = MusicTrack.objects.all().order_by('title', 'artist')
+    return render(
+        request,
+        "videos/music_list.html",
+        {
+            "tracks": tracks,
+        },
+    )
+
+
+@login_required
+def music_detail(request, track_id):
+    track = get_object_or_404(MusicTrack, pk=track_id)
+    stream_url = reverse("music_stream", args=[track.id])
+    content_type = "audio/mpeg"
+
+    return render(
+        request,
+        "videos/music_detail.html",
+        {
+            "track": track,
+            "stream_url": stream_url,
+            "content_type": content_type,
+        },
+    )
+
+
+@login_required
+def music_stream(request, track_id):
+    track = get_object_or_404(MusicTrack, pk=track_id)
+    # Resolve fresh audio-only stream via yt-dlp and proxy it
+    audio = resolve_audio_stream(track.yt_video_id)
+    upstream = requests.get(audio["stream_url"], stream=True, timeout=8)
+    resp = StreamingHttpResponse(
+        upstream.iter_content(chunk_size=64 * 1024),
+        content_type=upstream.headers.get("Content-Type", "audio/mpeg"),
+    )
+    for header in ["Content-Length", "Content-Range", "Accept-Ranges", "Cache-Control"]:
+        if header in upstream.headers:
+            resp[header] = upstream.headers[header]
+    return resp
+
 
 @login_required
 def video_detail(request, video_id):

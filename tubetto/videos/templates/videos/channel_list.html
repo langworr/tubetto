@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Channels</h1>
+<p>
+  <a href="{% url 'video_list' %}">Back to videos without channels</a>
+</p>
+<table style="width:100%; border-collapse: collapse;">
+  <thead>
+    <tr style="text-align:left; border-bottom: 1px solid #ccc;">
+      <th style="padding: 0.5rem;">Title</th>
+      <th style="padding: 0.5rem;">Channel ID</th>
+      <th style="padding: 0.5rem;">Subscribers</th>
+      <th style="padding: 0.5rem;">Videos</th>
+    </tr>
+  </thead>
+  <tbody>
+  {% for channel in channels %}
+    <tr style="border-bottom: 1px solid #eee;">
+      <td style="padding: 0.5rem;">
+        <a href="{% url 'channel_detail' channel.id %}">
+          {{ channel.title|default:channel.yt_channel_id }}
+        </a>
+      </td>
+      <td style="padding: 0.5rem;">{{ channel.yt_channel_id }}</td>
+      <td style="padding: 0.5rem;">
+        {% if channel.subscriber_count is not None %}
+          {{ channel.subscriber_count }}
+        {% else %}
+          —
+        {% endif %}
+      </td>
+      <td style="padding: 0.5rem;">
+        {% if channel.video_count is not None %}
+          {{ channel.video_count }}
+        {% else %}
+          —
+        {% endif %}
+      </td>
+    </tr>
+  {% empty %}
+    <tr><td colspan="4" style="padding:0.5rem;">No channels available.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endblock %}
+

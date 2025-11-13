@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Music Library</h1>
+<p>
+  <a href="{% url 'video_list' %}">Videos without channel</a> |
+  <a href="{% url 'channel_list' %}">Channels</a>
+</p>
+<table style="width:100%; border-collapse: collapse;">
+  <thead>
+    <tr style="text-align:left; border-bottom: 1px solid #ccc;">
+      <th style="padding: 0.5rem;">Title</th>
+      <th style="padding: 0.5rem;">Artist</th>
+      <th style="padding: 0.5rem;">Album</th>
+      <th style="padding: 0.5rem;">YouTube ID</th>
+      <th style="padding: 0.5rem;">Duration</th>
+    </tr>
+  </thead>
+  <tbody>
+  {% for track in tracks %}
+    <tr style="border-bottom: 1px solid #eee;">
+      <td style="padding: 0.5rem;">
+        <a href="{% url 'music_detail' track.id %}">
+          {{ track.title }}
+        </a>
+      </td>
+      <td style="padding: 0.5rem;">{{ track.artist|default:"—" }}</td>
+      <td style="padding: 0.5rem;">{{ track.album|default:"—" }}</td>
+      <td style="padding: 0.5rem;">{{ track.duration_display|default:"—" }}</td>
+      <td style="padding: 0.5rem;">{{ track.yt_video_id }}</td>
+    </tr>
+  {% empty %}
+    <tr><td colspan="4" style="padding:0.5rem;">No music tracks available.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endblock %}
+

@@ -1,8 +1,9 @@
 {% extends "base.html" %}
 {% block content %}
-<h1>Available Videos</h1>
+<h1>{{ channel.title|default:channel.yt_channel_id }}</h1>
 <p>
-  <a href="{% url 'channel_list' %}">View channels</a>
+  <a href="{% url 'channel_list' %}">Back to channel list</a> |
+  <a href="{% url 'video_list' %}">Videos without channel</a>
 </p>
 <table style="width:100%; border-collapse: collapse;">
   <thead>
@@ -10,7 +11,6 @@
       <th style="padding: 0.5rem;">Title</th>
       <th style="padding: 0.5rem;">Duration</th>
       <th style="padding: 0.5rem;">Upload Date</th>
-      <th style="padding: 0.5rem;">Channel</th>
       <th style="padding: 0.5rem;">Uploader</th>
     </tr>
   </thead>
@@ -26,20 +26,12 @@
           —
         {% endif %}
       </td>
-      <td style="padding: 0.5rem;">
-        {% if v.channel_title %}
-          {{ v.channel_title }}
-        {% elif v.channel %}
-          {{ v.channel.title }}
-        {% else %}
-          —
-        {% endif %}
-      </td>
       <td style="padding: 0.5rem;">{{ v.uploader|default:"—" }}</td>
     </tr>
   {% empty %}
-    <tr><td colspan="5" style="padding:0.5rem;">No videos available.</td></tr>
+    <tr><td colspan="4" style="padding:0.5rem;">No videos available for this channel.</td></tr>
   {% endfor %}
   </tbody>
 </table>
 {% endblock %}
+

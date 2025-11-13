@@ -1,6 +1,28 @@
+from importlib import import_module
+from typing import Any, Optional, Tuple, Type
+
 from django.db import models
 from django.utils import timezone
 from django.contrib.auth import get_user_model
+from django.core.exceptions import ValidationError
+
+AudioSegment: Optional[Any]
+PYDUB_DECODE_EXCEPTIONS: Tuple[Type[BaseException], ...] = ()
+try:  # pragma: no cover - optional dependency
+    pydub_module = import_module("pydub")
+    AudioSegment = getattr(pydub_module, "AudioSegment", None)
+    exceptions_module = import_module("pydub.exceptions")
+    could_not_decode = getattr(exceptions_module, "CouldntDecodeError", None)
+    if (
+        isinstance(AudioSegment, type)
+        and isinstance(could_not_decode, type)
+        and issubclass(could_not_decode, Exception)
+    ):
+        PYDUB_DECODE_EXCEPTIONS = (could_not_decode,)
+    else:
+        AudioSegment = None
+except (ModuleNotFoundError, AttributeError):  # pragma: no cover - optional dependency
+    AudioSegment = None
 
 User = get_user_model()
 
@@ -64,6 +86,52 @@ class ChannelVideo(models.Model):
 
     def __str__(self):
         return f"{self.channel}: {self.title or self.yt_video_id}"
+
+
+class MusicTrack(models.Model):
+    """
+    Audio track metadata for the music section.
+    """
+
+    yt_video_id = models.CharField(max_length=64, unique=True, default="", help_text="YouTube video id to extract audio from")
+    title = models.CharField(max_length=255, blank=True)
+    artist = models.CharField(max_length=255, blank=True)
+    album = models.CharField(max_length=255, blank=True)
+    duration = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        help_text="Duration in seconds",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ("title", "artist", "yt_video_id")
+
+    def __str__(self):
+        label = self.title or self.yt_video_id or "Untitled track"
+        if self.artist:
+            return f"{label} — {self.artist}"
+        return label
+
+    def clean(self):
+        super().clean()
+        if not self.yt_video_id:
+            raise ValidationError("You must set a YouTube video id for the audio track.")
+
+    def save(self, *args, **kwargs):
+        super().save(*args, **kwargs)
+
+    def duration_display(self):
+        if not self.duration:
+            return None
+        minutes, seconds = divmod(self.duration, 60)
+        hours, minutes = divmod(minutes, 60)
+        if hours:
+            return f"{hours:d}:{minutes:02d}:{seconds:02d}"
+        return f"{minutes:d}:{seconds:02d}"
+
+    # File-based fields removed: only yt-dlp audio streams are supported
 
 
 ## Whitelist removed per requirements

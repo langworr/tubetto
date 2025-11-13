@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import Video, Channel, ChannelVideo
+from .models import Video, Channel, ChannelVideo, MusicTrack
 from django.db import transaction
 from django.contrib import messages
 from .services import list_channel_videos_flat, resolve_video_info, metadata_from_info
@@ -118,5 +118,18 @@ class VideoAdmin(admin.ModelAdmin):
             except Exception as e:
                 self.message_user(request, f"Warning: Could not fetch metadata: {e}", level=messages.WARNING)
 
+
+@admin.register(MusicTrack)
+class MusicTrackAdmin(admin.ModelAdmin):
+    list_display = ("title", "artist", "album", "yt_video_id", "duration")
+    search_fields = ("title", "artist", "album", "yt_video_id")
+    list_filter = ("artist", "album")
+    ordering = ("title",)
+
+    fieldsets = (
+        (None, {"fields": ("title", "artist", "album", "yt_video_id", "duration")}),
+        ("Metadata", {"fields": ("created_at", "updated_at"), "classes": ("collapse",)}),
+    )
+    readonly_fields = ("created_at", "updated_at")
 
 

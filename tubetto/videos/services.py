@@ -35,6 +35,39 @@ def resolve_video_info(video_id: str) -> dict:
     _cache_set(video_id, data)
     return data
 
+def select_best_audio(formats: list[dict]) -> dict | None:
+    """Pick the best audio-only format (no video). Prefer m4a/mp4a or webm/opus by bitrate."""
+    audio_only = []
+    for f in formats:
+        if (f.get("vcodec") in (None, "none")) and (f.get("acodec") and f.get("acodec") != "none") and f.get("url"):
+            audio_only.append(f)
+    if not audio_only:
+        return None
+    # Prefer m4a/mp4 over webm when bitrates are comparable
+    def score(f: dict) -> tuple:
+        ext = (f.get("ext") or "").lower()
+        is_m4a = 1 if ext in ("m4a", "mp4", "mp4a") else 0
+        return (is_m4a, f.get("tbr") or f.get("abr") or 0)
+    audio_only = sorted(audio_only, key=score, reverse=True)
+    best = audio_only[0]
+    return {"url": best.get("url"), "ext": best.get("ext"), "acodec": best.get("acodec")}
+
+def resolve_audio_stream(video_id: str) -> dict:
+    """Return a direct audio stream URL and metadata for the given YouTube id."""
+    info = resolve_video_info(video_id)
+    audio = select_best_audio(info.get("formats", []))
+    if not audio:
+        raise RuntimeError("No audio-only stream available")
+    return {
+        "video_id": video_id,
+        "title": info.get("title"),
+        "duration": info.get("duration"),
+        "thumbnail": info.get("thumbnail"),
+        "stream_url": audio.get("url"),
+        "ext": audio.get("ext"),
+        "acodec": audio.get("acodec"),
+    }
+
 def _select_progressive(formats: list[dict]) -> dict | None:
     progressive = []
     for f in formats:
