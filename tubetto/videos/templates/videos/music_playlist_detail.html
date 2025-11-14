@@ -14,8 +14,6 @@
   <section style="margin-bottom: 1.5rem;">
     <p><strong>Total tracks:</strong> {{ entries|length }}</p>
     <p style="margin-top:0.5rem;">
-      <a href="{{ playlist_stream_url }}" style="padding:0.5rem 1rem; background:#2ecc71; color:white; border-radius:4px; text-decoration:none;">Open player</a>
-      <a href="{{ playlist_shuffle_stream_url }}" style="padding:0.5rem 1rem; background:#9b59b6; color:white; border-radius:4px; text-decoration:none; margin-left:0.5rem;">Open shuffle player</a>
       <a href="{{ playlist_stream_url }}?format=m3u" style="padding:0.5rem 1rem; background:#34495e; color:white; border-radius:4px; text-decoration:none; margin-left:0.5rem;">Download M3U</a>
     </p>
   </section>
@@ -38,8 +36,7 @@
         <td style="padding: 0.5rem;">{{ entry.track.artist|default:"—" }}</td>
         <td style="padding: 0.5rem;">{{ entry.track.duration_display|default:"—" }}</td>
         <td style="padding: 0.5rem;">
-          <a href="{% url 'music_detail' entry.track.id %}">Details</a> |
-          <a href="{% url 'music_stream' entry.track.id %}">Stream</a>
+          <a href="{% url 'music_detail' entry.track.id %}">Details</a>
         </td>
       </tr>
     {% endfor %}

@@ -10,7 +10,6 @@ urlpatterns = [
     path('music/<int:track_id>/stream/', views.music_stream, name='music_stream'),
     path('music/playlists/', views.music_playlist_list, name='music_playlist_list'),
     path('music/playlists/<int:playlist_id>/', views.music_playlist_detail, name='music_playlist_detail'),
-    path('music/playlists/<int:playlist_id>/stream/', views.music_playlist_stream, name='music_playlist_stream'),
     path('watch/<str:video_id>/', views.video_detail, name='video_detail'),
     path('scheduled-task/', views.scheduled_task, name='scheduled_task'),
 
