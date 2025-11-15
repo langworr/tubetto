@@ -26,7 +26,10 @@
       <td style="padding: 0.5rem;">{{ playlist.track_total }}</td>
       <td style="padding: 0.5rem;">{{ playlist.created_at|date:"Y-m-d" }}</td>
       <td style="padding: 0.5rem;">
-        <a href="{% url 'music_playlist_stream' playlist.id %}?format=m3u">Download M3U</a>
+        <a href="{% url 'publish_playlist' playlist.id %}">Publish</a>
+        {% if playlist.published_m3u_path %}
+          | <a href="/media/{{ playlist.published_m3u_path }}" target="_blank">View Published</a>
+        {% endif %}
       </td>
     </tr>
   {% empty %}

@@ -1,9 +1,12 @@
 import random
+from pathlib import Path
 
-from django.http import HttpResponse, HttpResponseForbidden
+from django.http import HttpResponse, HttpResponseForbidden, HttpResponseRedirect
 from django.http import StreamingHttpResponse
 from django.contrib.auth.decorators import login_required, user_passes_test
 from django.db.models import Count, Prefetch
+from django.conf import settings
+from django.urls import reverse
 from .models import Video, Channel, MusicTrack, MusicPlaylist, MusicPlaylistTrack
 from .services import (
     resolve_stream_manifest, resolve_video_info, metadata_from_info,
@@ -14,7 +17,6 @@ import requests
 from urllib.parse import urljoin, urlencode
 
 from django.shortcuts import render, get_object_or_404
-from django.urls import reverse
 
 
 def _is_video_allowed(_video: Video) -> bool:
@@ -299,6 +301,47 @@ def _is_admin(user):
 
 
 @login_required
+def publish_playlist(request, playlist_id):
+    """Publish a playlist by writing its M3U file to disk."""
+    playlist = get_object_or_404(MusicPlaylist, pk=playlist_id)
+    
+    # Generate M3U content
+    entries = playlist.entries.select_related("track").order_by("position", "added_at")
+    m3u_lines = ["#EXTM3U"]
+    base_url = request.build_absolute_uri("/").rstrip("/")
+    
+    for entry in entries:
+        track = entry.track
+        stream_url = base_url + reverse("music_stream", args=[track.id])
+        duration = track.duration or -1
+        title = track.title
+        if track.artist:
+            title = f"{track.artist} - {title}"
+        m3u_lines.append(f"#EXTINF:{duration},{title}")
+        m3u_lines.append(stream_url)
+    
+    m3u_content = "\n".join(m3u_lines) + "\n"
+    
+    # Create media/playlists directory if it doesn't exist
+    playlists_dir = Path(settings.MEDIA_ROOT) / "playlists"
+    playlists_dir.mkdir(parents=True, exist_ok=True)
+    
+    # Write M3U file
+    filename = f"playlist_{playlist.id}.m3u"
+    file_path = playlists_dir / filename
+    with open(file_path, "w", encoding="utf-8") as f:
+        f.write(m3u_content)
+    
+    # Save relative path to model
+    relative_path = f"playlists/{filename}"
+    playlist.published_m3u_path = relative_path
+    playlist.save()
+    
+    # Redirect back to playlist detail
+    return HttpResponseRedirect(reverse("music_playlist_detail", args=[playlist.id]))
+
+
+@login_required
 @user_passes_test(_is_admin)
 def scheduled_task(request):
     """Admin-only page to run scheduled tasks."""
@@ -318,6 +361,9 @@ def scheduled_task(request):
         elif 'update_music_tracks' in request.POST:
             results = update_music_tracks_metadata()
             task_name = "Update Music Tracks Metadata"
+        elif 'publish_playlists' in request.POST:
+            results = publish_all_playlists(request)
+            task_name = "Publish Playlists"
         elif 'run_all' in request.POST:
             results = run_scheduled_task()
             task_name = "All Tasks"
@@ -326,3 +372,54 @@ def scheduled_task(request):
         "results": results,
         "task_name": task_name,
     })
+
+
+def publish_all_playlists(request):
+    """Publish all playlists by writing their M3U files to disk."""
+    playlists = MusicPlaylist.objects.all()
+    published_count = 0
+    errors = []
+    
+    for playlist in playlists:
+        try:
+            # Generate M3U content
+            entries = playlist.entries.select_related("track").order_by("position", "added_at")
+            m3u_lines = ["#EXTM3U"]
+            base_url = request.build_absolute_uri("/").rstrip("/")
+            
+            for entry in entries:
+                track = entry.track
+                stream_url = base_url + reverse("music_stream", args=[track.id])
+                duration = track.duration or -1
+                title = track.title
+                if track.artist:
+                    title = f"{track.artist} - {title}"
+                m3u_lines.append(f"#EXTINF:{duration},{title}")
+                m3u_lines.append(stream_url)
+            
+            m3u_content = "\n".join(m3u_lines) + "\n"
+            
+            # Create media/playlists directory if it doesn't exist
+            playlists_dir = Path(settings.MEDIA_ROOT) / "playlists"
+            playlists_dir.mkdir(parents=True, exist_ok=True)
+            
+            # Write M3U file
+            filename = f"playlist_{playlist.id}.m3u"
+            file_path = playlists_dir / filename
+            with open(file_path, "w", encoding="utf-8") as f:
+                f.write(m3u_content)
+            
+            # Save relative path to model
+            relative_path = f"playlists/{filename}"
+            playlist.published_m3u_path = relative_path
+            playlist.save()
+            
+            published_count += 1
+        except Exception as e:
+            errors.append(f"Error publishing playlist '{playlist.title}': {str(e)}")
+    
+    return {
+        "playlists_processed": playlists.count(),
+        "playlists_published": published_count,
+        "errors": errors,
+    }

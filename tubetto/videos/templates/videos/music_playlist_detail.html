@@ -15,6 +15,10 @@
     <p><strong>Total tracks:</strong> {{ entries|length }}</p>
     <p style="margin-top:0.5rem;">
       <a href="{{ playlist_stream_url }}?format=m3u" style="padding:0.5rem 1rem; background:#34495e; color:white; border-radius:4px; text-decoration:none; margin-left:0.5rem;">Download M3U</a>
+      <a href="{% url 'publish_playlist' playlist.id %}" style="padding:0.5rem 1rem; background:#27ae60; color:white; border-radius:4px; text-decoration:none; margin-left:0.5rem;">Publish</a>
+      {% if playlist.published_m3u_path %}
+        <a href="/media/{{ playlist.published_m3u_path }}" target="_blank" style="padding:0.5rem 1rem; background:#16a085; color:white; border-radius:4px; text-decoration:none; margin-left:0.5rem;">View Published M3U</a>
+      {% endif %}
     </p>
   </section>
 

@@ -119,6 +119,7 @@ class MusicPlaylist(models.Model):
     description = models.TextField(blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+    published_m3u_path = models.CharField(max_length=512, blank=True, help_text="Path to the published M3U file")
 
     class Meta:
         ordering = ("title", "created_at")
