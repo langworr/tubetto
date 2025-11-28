@@ -10,17 +10,23 @@
         padding: 0;
         box-sizing: border-box;
       }
+      html, body {
+        height: 100%;
+      }
       body {
         font-family: system-ui, -apple-system, sans-serif;
         line-height: 1.6;
         color: #333;
         background-color: #f5f5f5;
+        display: flex;
+        flex-direction: column;
       }
       .header {
         background-color: #2c3e50;
         color: white;
         padding: 1rem 0;
         box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        flex-shrink: 0;
       }
       .header-content {
         max-width: 1200px;
@@ -64,7 +70,8 @@
         margin: 0 auto;
         padding: 2rem 1.5rem;
         background-color: white;
-        min-height: calc(100vh - 80px);
+        flex: 1;
+        width: 100%;
         box-shadow: 0 0 10px rgba(0,0,0,0.05);
       }
       .footer {
@@ -72,14 +79,14 @@
         color: white;
         text-align: center;
         padding: 1rem;
-        margin-top: 2rem;
+        flex-shrink: 0;
       }
     </style>
   </head>
   <body>
     <header class="header">
       <div class="header-content">
-        <h1><a href="{% url 'video_list' %}">Tubetto</a></h1>
+        <h1><a href="{% url 'home' %}">Tubetto</a></h1>
         <nav>
           <ul class="nav-menu">
             <li><a href="{% url 'video_list' %}">Videos</a></li>

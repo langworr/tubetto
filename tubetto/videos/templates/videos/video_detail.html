@@ -1,11 +1,29 @@
 {% extends "base.html" %}
 {% block content %}
-<h1>{{ video.title }}</h1>
-{% if video.thumbnail %}
-  <img src="{{ video.thumbnail }}" alt="{{ video.title }}" style="max-width: 320px; height: auto;"/>
-{% endif %}
 
-<video id="player" controls style="width: 100%; max-width: 800px;"></video>
+<div class="video-player">
+    {% if stream.stream_type == "hls" %}
+        <!-- HLS stream -->
+        <video width="100%" controls>
+            <source src="{% url 'hls_manifest' video.yt_video_id %}" type="application/vnd.apple.mpegurl">
+            Your browser does not support HLS video.
+        </video>
+    {% elif stream.stream_type == "progressive" %}
+        <!-- Progressive MP4 stream -->
+        <video width="100%" controls>
+            <source src="{% url 'progressive_file' video.yt_video_id %}" type="video/mp4">
+            Your browser does not support the video tag.
+        </video>
+    {% else %}
+        <p>Stream type not supported: {{ stream.stream_type }}</p>
+    {% endif %}
+</div>
+
+<div class="video-info">
+    <h1>{{ video.title }}</h1>
+    <p>{{ video.description }}</p>
+    <p><strong>Duration:</strong> {{ video.duration }} seconds</p>
+</div>
 
 <section style="margin-top: 1rem;">
   <h2>Metadata</h2>
@@ -60,39 +78,4 @@
 </section>
 {% endif %}
 
-<!-- Comments and suggestions removed by requirement -->
-
-{% if stream.stream_type == 'progressive' %}
-  <script>
-    (function() {
-      var video = document.getElementById('player');
-      video.src = '/stream/{{ video.yt_video_id }}/file';
-    })();
-  </script>
-{% elif stream.stream_type == 'hls' %}
-  <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
-  <script>
-    (function() {
-      var video = document.getElementById('player');
-      var src = '/stream/{{ video.yt_video_id }}/master.m3u8';
-      if (Hls.isSupported()) {
-        var hls = new Hls();
-        hls.loadSource(src);
-        hls.attachMedia(video);
-      } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
-        video.src = src;
-      }
-    })();
-  </script>
-{% elif stream.stream_type == 'dash' %}
-  <script src="https://cdn.dashjs.org/latest/dash.all.min.js"></script>
-  <script>
-    (function() {
-      var video = document.getElementById('player');
-      var url = '{{ stream.manifest_url }}';
-      var player = dashjs.MediaPlayer().create();
-      player.initialize(video, url, true);
-    })();
-  </script>
-{% endif %}
 {% endblock %}

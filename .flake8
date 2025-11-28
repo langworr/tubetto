@@ -1,0 +1,3 @@
+[flake8]
+# Lunghezza massima delle righe
+max-line-length = 120

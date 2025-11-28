@@ -71,7 +71,7 @@ def resolve_audio_stream(video_id: str) -> dict:
 
 def update_music_tracks_metadata() -> Dict[str, Any]:
     """Update metadata for all music tracks using yt-dlp."""
-    from .models import MusicTrack
+    from ..videos.models import MusicTrack
 
     results: Dict[str, Any] = {
         "tracks_processed": 0,
@@ -318,7 +318,7 @@ def resolve_channel_metadata(channel_id: str) -> Dict[str, Optional[str]]:
 
 def update_channels_metadata() -> Dict[str, any]:
     """Update metadata for all channels."""
-    from .models import Channel
+    from ..videos.models import Channel
     
     results = {
         "channels_processed": 0,
@@ -349,7 +349,7 @@ def update_channels_metadata() -> Dict[str, any]:
 
 def scan_channel_videos() -> Dict[str, any]:
     """Scan all videos in each channel and insert into videos table with full metadata."""
-    from .models import Channel, Video, ChannelVideo
+    from ..videos.models import Channel, Video, ChannelVideo
     
     results = {
         "channels_scanned": 0,
@@ -433,7 +433,7 @@ def scan_channel_videos() -> Dict[str, any]:
 
 def update_videos_metadata() -> Dict[str, any]:
     """Update metadata for all videos."""
-    from .models import Video
+    from ..videos.models import Video
     
     results = {
         "videos_processed": 0,

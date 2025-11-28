@@ -1,8 +1,8 @@
 from django.contrib import admin
-from .models import Video, Channel, ChannelVideo, MusicTrack, MusicPlaylist, MusicPlaylistTrack
+from .models import Video, Channel, ChannelVideo
 from django.db import transaction
 from django.contrib import messages
-from .services import list_channel_videos_flat, resolve_video_info, metadata_from_info
+from tubetto.services import list_channel_videos_flat, resolve_video_info, metadata_from_info
 
 @admin.register(Channel)
 class ChannelAdmin(admin.ModelAdmin):
@@ -117,38 +117,3 @@ class VideoAdmin(admin.ModelAdmin):
                     obj.save()
             except Exception as e:
                 self.message_user(request, f"Warning: Could not fetch metadata: {e}", level=messages.WARNING)
-
-
-@admin.register(MusicTrack)
-class MusicTrackAdmin(admin.ModelAdmin):
-    list_display = ("title", "artist", "album", "yt_video_id", "duration")
-    search_fields = ("title", "artist", "album", "yt_video_id")
-    list_filter = ("artist", "album")
-    ordering = ("title",)
-
-    fieldsets = (
-        (None, {"fields": ("title", "artist", "album", "yt_video_id", "duration")}),
-        ("Metadata", {"fields": ("created_at", "updated_at"), "classes": ("collapse",)}),
-    )
-    readonly_fields = ("created_at", "updated_at")
-
-
-class MusicPlaylistTrackInline(admin.TabularInline):
-    model = MusicPlaylistTrack
-    extra = 1
-    autocomplete_fields = ("track",)
-    ordering = ("position",)
-
-
-@admin.register(MusicPlaylist)
-class MusicPlaylistAdmin(admin.ModelAdmin):
-    list_display = ("title", "description", "track_count", "created_at")
-    search_fields = ("title", "description")
-    inlines = [MusicPlaylistTrackInline]
-    readonly_fields = ("created_at", "updated_at")
-    ordering = ("title",)
-
-    def track_count(self, obj):
-        return obj.track_count()
-    track_count.short_description = "Tracks"
-

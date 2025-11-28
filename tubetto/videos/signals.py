@@ -1,7 +1,7 @@
 from django.db.models.signals import post_save
 from django.dispatch import receiver
 from .models import Video
-from .services import resolve_video_info, metadata_from_info
+from tubetto.services import resolve_video_info, metadata_from_info
 import logging
 
 logger = logging.getLogger(__name__)

@@ -39,7 +39,9 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     'mozilla_django_oidc',
 
-    'videos'
+    'tubetto',
+    'videos',
+    'music'
 ]
 
 MIDDLEWARE = [
@@ -104,21 +106,22 @@ AUTH_PASSWORD_VALIDATORS = [
 AUTHENTICATION_BACKENDS = [
     "django.contrib.auth.backends.ModelBackend",
     "mozilla_django_oidc.auth.OIDCAuthenticationBackend",
-    "videos.auth.KeycloakOIDCBackend",
+    "tubetto.auth.KeycloakOIDCBackend",
 ]
 
 OIDC_RP_CLIENT_ID = "tubetto-test"
 OIDC_RP_CLIENT_SECRET = "hDJIwosbDI9EGtAbLU2XGED6A47oaBiv"
-OIDC_OP_AUTHORIZATION_ENDPOINT = "https://kc.langwor.org/realms/myrealm/protocol/openid-connect/auth"
-OIDC_OP_TOKEN_ENDPOINT = "https://kc.langwor.org/realms/myrealm/protocol/openid-connect/token"
-OIDC_OP_USER_ENDPOINT = "https://kc.langwor.org/realms/myrealm/protocol/openid-connect/userinfo"
-OIDC_OP_JWKS_ENDPOINT = "https://kc.langwor.org/realms/myrealm/protocol/openid-connect/certs"
+OIDC_OP_AUTHORIZATION_ENDPOINT = "https://kc.langwor.org/realms/langwor-test/protocol/openid-connect/auth"
+OIDC_OP_DISCOVERY_ENDPOINT = "https://kc.langwor.org/realms/langwor-test/.well-known/openid-configuration"
+OIDC_OP_TOKEN_ENDPOINT = "https://kc.langwor.org/realms/langwor-test/protocol/openid-connect/token"
+OIDC_OP_USER_ENDPOINT = "https://kc.langwor.org/realms/langwor-test/protocol/openid-connect/userinfo"
+OIDC_OP_JWKS_ENDPOINT = "https://kc.langwor.org/realms/langwor-test/protocol/openid-connect/certs"
 OIDC_RP_SCOPES = "openid email profile"
+OIDC_RP_SIGN_ALGO = "RS256"
 
 LOGIN_URL = "/oidc/authenticate/"
 LOGIN_REDIRECT_URL = "/"
 LOGOUT_REDIRECT_URL = "/"
-
 
 
 # Internationalization

@@ -18,14 +18,18 @@ from django.contrib import admin
 from django.urls import path, include
 from django.conf import settings
 from django.conf.urls.static import static
+from django.views.generic import TemplateView
+from . import views
 
 urlpatterns = [
+    path('', TemplateView.as_view(template_name='home.html'), name='home'),
     path('admin/', admin.site.urls),
-    path('', include('videos.urls')),
+    path('video/', include('videos.urls')),
+    path('music/', include('music.urls')),
     path('oidc/', include('mozilla_django_oidc.urls')),
+    path('scheduled-task/', views.scheduled_task, name='scheduled_task'),
 ]
 
 # Serve media files in development
 if settings.DEBUG:
     urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
-
