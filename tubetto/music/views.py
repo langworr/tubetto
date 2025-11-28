@@ -8,12 +8,10 @@ from pathlib import Path
 from urllib.parse import urljoin
 
 import requests
-from requests.exceptions import RequestException
-from django.db import DatabaseError
 
 from django.http import HttpResponseRedirect
 from django.http import StreamingHttpResponse
-from django.contrib.auth.decorators import login_required, user_passes_test
+from django.contrib.auth.decorators import login_required
 from django.db.models import Count, Prefetch
 from django.conf import settings
 from django.urls import reverse
@@ -21,8 +19,7 @@ from django.shortcuts import render, get_object_or_404
 
 from tubetto.services import (
     resolve_stream_manifest,
-    run_scheduled_task, update_channels_metadata, scan_channel_videos, update_videos_metadata,
-    resolve_audio_stream, update_music_tracks_metadata
+    resolve_audio_stream
 )
 
 from .models import MusicTrack, MusicPlaylist, MusicPlaylistTrack
@@ -59,7 +56,7 @@ def music_list(_request):
     tracks = MusicTrack.objects.all().order_by('title', 'artist')
     return render(
         _request,
-        "videos/music_list.html",
+        "music/music_list.html",
         {
             "tracks": tracks,
         },
@@ -86,7 +83,7 @@ def music_detail(_request, track_id):
 
     return render(
         _request,
-        "videos/music_detail.html",
+        "music/music_detail.html",
         {
             "track": track,
             "stream_url": stream_url,
@@ -142,7 +139,7 @@ def music_playlist_list(_request):
     )
     return render(
         _request,
-        "videos/music_playlist_list.html",
+        "music/music_playlist_list.html",
         {
             "playlists": playlists,
         },
@@ -171,30 +168,18 @@ def music_playlist_detail(_request, playlist_id):
     )
     playlist = get_object_or_404(playlist_qs, pk=playlist_id)
     entries = list(playlist.entries.all())
-    stream_url = reverse("music_playlist_stream", args=[playlist.id])
-    shuffle_stream_url = f"{stream_url}?shuffle=1"
+    # stream_url = reverse("music_playlist_stream", args=[playlist.id])
+    # shuffle_stream_url = f"{stream_url}?shuffle=1"
     return render(
         _request,
-        "videos/music_playlist_detail.html",
+        "music/music_playlist_detail.html",
         {
             "playlist": playlist,
             "entries": entries,
-            "playlist_stream_url": stream_url,
-            "playlist_shuffle_stream_url": shuffle_stream_url,
+            "playlist_stream_url": "stream_url removed",
+            "playlist_shuffle_stream_url": "shuffle_stream_url removed",
         },
     )
-
-
-def _is_admin(user):
-    """Check if user has admin privileges.
-
-    Args:
-        user: Django User object.
-
-    Returns:
-        True if user is authenticated and is superuser or in 'admin' group.
-    """
-    return user.is_authenticated and (user.is_superuser or user.groups.filter(name__in=["admin"]).exists())
 
 
 @login_required
@@ -217,8 +202,8 @@ def publish_playlist(request, playlist_id):
     playlist = get_object_or_404(MusicPlaylist, pk=playlist_id)
 
     # Generate M3U content
-    # entries = playlist.entries.select_related("track").order_by("position", "added_at")
-    entries = playlist.objects.select_related("track").order_by("position", "added_at")
+    entries = playlist.entries.select_related("track").order_by("position", "added_at")
+    # entries = playlist.objects.select_related("track").order_by("position", "added_at")
     m3u_lines = ["#EXTM3U"]
     base_url = request.build_absolute_uri("/").rstrip("/")
 
@@ -251,112 +236,3 @@ def publish_playlist(request, playlist_id):
 
     # Redirect back to playlist detail
     return HttpResponseRedirect(reverse("music_playlist_detail", args=[playlist.id]))
-
-
-@login_required
-@user_passes_test(_is_admin)
-def scheduled_task(request):
-    """Admin-only page to run scheduled maintenance tasks.
-
-    Handles POST requests to trigger various tasks: update channels metadata,
-    scan videos, update video/music metadata, publish playlists, or run all tasks.
-
-    Args:
-        request: HTTP request object (login and admin privileges required).
-
-    Returns:
-        Rendered template with task results and status.
-    """
-    results = None
-    task_name = None
-
-    if request.method == 'POST':
-        if 'update_channels' in request.POST:
-            results = update_channels_metadata()
-            task_name = "Update Channels Metadata"
-        elif 'scan_videos' in request.POST:
-            results = scan_channel_videos()
-            task_name = "Scan Channel Videos"
-        elif 'update_videos_metadata' in request.POST:
-            results = update_videos_metadata()
-            task_name = "Update Videos Metadata"
-        elif 'update_music_tracks' in request.POST:
-            results = update_music_tracks_metadata()
-            task_name = "Update Music Tracks Metadata"
-        elif 'publish_playlists' in request.POST:
-            results = publish_all_playlists(request)
-            task_name = "Publish Playlists"
-        elif 'run_all' in request.POST:
-            results = run_scheduled_task()
-            task_name = "All Tasks"
-
-    return render(request, "videos/scheduled_task.html", {
-        "results": results,
-        "task_name": task_name,
-    })
-
-
-def publish_all_playlists(request):
-    """Publish all playlists by writing their M3U files to disk.
-
-    Iterates over all playlists and generates M3U files with track metadata
-    and stream URLs. Handles errors gracefully and logs failures.
-
-    Args:
-        request: HTTP request object (used to build absolute URLs).
-
-    Returns:
-        Dictionary with keys:
-            - playlists_processed: Total number of playlists.
-            - playlists_published: Number of successfully published playlists.
-            - errors: List of error messages for failed playlists.
-    """
-    playlists = MusicPlaylist.objects.all()
-    published_count = 0
-    errors = []
-
-    for playlist in playlists:
-        try:
-            # Generate M3U content
-            entries = playlist.entries.select_related("track").order_by("position", "added_at")
-            m3u_lines = ["#EXTM3U"]
-            base_url = request.build_absolute_uri("/").rstrip("/")
-
-            for entry in entries:
-                track = entry.track
-                stream_url = base_url + reverse("music_stream", args=[track.id])
-                duration = track.duration or -1
-                title = track.title
-                if track.artist:
-                    title = f"{track.artist} - {title}"
-                m3u_lines.append(f"#EXTINF:{duration},{title}")
-                m3u_lines.append(stream_url)
-
-            m3u_content = "\n".join(m3u_lines) + "\n"
-
-            # Create media/playlists directory if it doesn't exist
-            playlists_dir = Path(settings.MEDIA_ROOT) / "playlists"
-            playlists_dir.mkdir(parents=True, exist_ok=True)
-
-            # Write M3U file
-            filename = f"playlist_{playlist.id}.m3u"
-            file_path = playlists_dir / filename
-            with open(file_path, "w", encoding="utf-8") as f:
-                f.write(m3u_content)
-
-            # Save relative path to model
-            relative_path = f"playlists/{filename}"
-            playlist.published_m3u_path = relative_path
-            playlist.save()
-
-            published_count += 1
-        except (OSError, RequestException, DatabaseError) as e:
-            # Catch file I/O, upstream request and DB errors explicitly to avoid
-            # broad-exception Pylint warning and to be explicit about expected failure modes.
-            errors.append(f"Error publishing playlist '{playlist.title}': {e}")
-
-    return {
-        "playlists_processed": playlists.count(),
-        "playlists_published": published_count,
-        "errors": errors,
-    }

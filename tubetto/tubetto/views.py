@@ -28,7 +28,6 @@ from django.shortcuts import render
 from django.views.generic import TemplateView
 from django.contrib.auth.decorators import login_required, user_passes_test
 
-from music.views import publish_all_playlists
 from tubetto.services import (
     run_scheduled_task, update_channels_metadata, scan_channel_videos, update_videos_metadata,
     update_music_tracks_metadata
@@ -119,14 +118,11 @@ def scheduled_task(request):
         elif 'update_music_tracks' in request.POST:
             results = update_music_tracks_metadata()
             task_name = "Update Music Tracks Metadata"
-        elif 'publish_playlists' in request.POST:
-            results = publish_all_playlists(request)
-            task_name = "Publish Playlists"
         elif 'run_all' in request.POST:
             results = run_scheduled_task()
             task_name = "All Tasks"
 
-    return render(request, "videos/scheduled_task.html", {
+    return render(request, "scheduled_task.html", {
         "results": results,
         "task_name": task_name,
     })
