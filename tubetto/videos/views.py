@@ -27,6 +27,7 @@ from django.http import HttpResponse, HttpResponseForbidden
 from django.http import StreamingHttpResponse
 from django.contrib.auth.decorators import login_required
 from django.shortcuts import render, get_object_or_404
+from django.urls import reverse
 from tubetto.services import (
     resolve_stream_manifest, resolve_video_info, metadata_from_info,
 )
@@ -297,7 +298,7 @@ def hls_manifest(_request, video_id):
                 else:
                     uri_part = rest.split(',', 1)[0]
                 upstream_key = urljoin(base, uri_part)
-                proxied = f"/stream/{video_id}/key?" + urlencode({"u": upstream_key})
+                proxied = reverse("hls_key", args=[video_id]) + "?" + urlencode({"u": upstream_key})
                 if '"' in rest:
                     newline = s.replace(f'URI="{uri_part}"', f'URI="{proxied}"')
                 else:
@@ -310,7 +311,7 @@ def hls_manifest(_request, video_id):
             rewritten.append(line)
             continue
         upstream_url = urljoin(base, s)
-        proxied = f"/stream/{video_id}/seg?" + urlencode({"u": upstream_url})
+        proxied = reverse("hls_segment", args=[video_id]) + "?" + urlencode({"u": upstream_url})
         rewritten.append(proxied)
 
     content = "\n".join(rewritten)

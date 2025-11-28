@@ -4,10 +4,42 @@
 <div class="video-player">
     {% if stream.stream_type == "hls" %}
         <!-- HLS stream -->
-        <video width="100%" controls>
-            <source src="{% url 'hls_manifest' video.yt_video_id %}" type="application/vnd.apple.mpegurl">
-            Your browser does not support HLS video.
-        </video>
+        <video id="video-player" width="100%" controls playsinline></video>
+        <script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.10/dist/hls.min.js" integrity="sha256-Vm13+BcSBcOwOOu27q5lx1gsvtpFe9ZwGtjGhNHzawk=" crossorigin="anonymous"></script>
+        <script>
+          document.addEventListener('DOMContentLoaded', function () {
+            const videoEl = document.getElementById('video-player');
+            const manifestUrl = "{% url 'hls_manifest' video.yt_video_id %}";
+
+            if (videoEl.canPlayType('application/vnd.apple.mpegurl')) {
+              videoEl.src = manifestUrl;
+              return;
+            }
+
+            if (window.Hls && window.Hls.isSupported()) {
+              const hls = new window.Hls({
+                enableWorker: true,
+                lowLatencyMode: true,
+              });
+              hls.loadSource(manifestUrl);
+              hls.attachMedia(videoEl);
+              hls.on(window.Hls.Events.ERROR, function (_evt, data) {
+                if (!data.fatal) {
+                  return;
+                }
+                if (data.type === window.Hls.ErrorTypes.NETWORK_ERROR) {
+                  hls.startLoad();
+                } else if (data.type === window.Hls.ErrorTypes.MEDIA_ERROR) {
+                  hls.recoverMediaError();
+                } else {
+                  hls.destroy();
+                }
+              });
+            } else {
+              videoEl.outerHTML = '<p>HLS playback is not supported in this browser.</p>';
+            }
+          });
+        </script>
     {% elif stream.stream_type == "progressive" %}
         <!-- Progressive MP4 stream -->
         <video width="100%" controls>
