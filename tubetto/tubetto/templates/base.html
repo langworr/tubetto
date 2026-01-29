@@ -4,117 +4,79 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>{% block title %}Tubetto{% endblock %}</title>
+
+    <!-- Bootstrap 5 -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+
     <style>
-      * {
-        margin: 0;
-        padding: 0;
-        box-sizing: border-box;
-      }
-      html, body {
-        height: 100%;
-      }
       body {
-        font-family: system-ui, -apple-system, sans-serif;
-        line-height: 1.6;
-        color: #333;
         background-color: #f5f5f5;
-        display: flex;
-        flex-direction: column;
+        font-family: system-ui, -apple-system, sans-serif;
       }
-      .header {
-        background-color: #2c3e50;
-        color: white;
-        padding: 1rem 0;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-        flex-shrink: 0;
-      }
-      .header-content {
-        max-width: 1200px;
-        margin: 0 auto;
-        padding: 0 1.5rem;
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-      }
-      .header h1 {
-        font-size: 1.5rem;
-        font-weight: 600;
-      }
-      .header h1 a {
-        color: white;
-        text-decoration: none;
-      }
-      .header h1 a:hover {
-        opacity: 0.9;
-      }
-      .nav-menu {
-        display: flex;
-        gap: 1.5rem;
-        list-style: none;
-      }
-      .nav-menu li a {
-        color: white;
-        text-decoration: none;
-        padding: 0.5rem 1rem;
-        border-radius: 4px;
-        transition: background-color 0.2s;
-      }
-      .nav-menu li a:hover {
-        background-color: rgba(255, 255, 255, 0.1);
-      }
-      .nav-menu li a.active {
-        background-color: rgba(255, 255, 255, 0.2);
-      }
-      .container {
+      .content-wrapper {
         max-width: 1200px;
         margin: 0 auto;
         padding: 2rem 1.5rem;
-        background-color: white;
-        flex: 1;
-        width: 100%;
+        background: white;
         box-shadow: 0 0 10px rgba(0,0,0,0.05);
+        min-height: calc(100vh - 140px);
       }
-      .footer {
+      footer {
         background-color: #2c3e50;
         color: white;
-        text-align: center;
-        padding: 1rem;
-        flex-shrink: 0;
       }
     </style>
   </head>
+
   <body>
-    <header class="header">
-      <div class="header-content">
-        <h1><a href="{% url 'home' %}">Tubetto</a></h1>
-        <nav>
-          <ul class="nav-menu">
-            <li><a href="{% url 'video_list' %}">Videos</a></li>
-            <li><a href="{% url 'channel_list' %}">Channels</a></li>
-            <li><a href="{% url 'music_list' %}">Music</a></li>
-            <li><a href="{% url 'music_playlist_list' %}">Playlists</a></li>
+
+    <!-- NAVBAR -->
+    <nav class="navbar navbar-expand-lg navbar-dark" style="background-color:#2c3e50;">
+      <div class="container-fluid">
+        <a class="navbar-brand fw-semibold" href="{% url 'home' %}">Tubetto</a>
+
+        <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#mainNav">
+          <span class="navbar-toggler-icon"></span>
+        </button>
+
+        <div class="collapse navbar-collapse" id="mainNav">
+          <ul class="navbar-nav ms-auto mb-2 mb-lg-0">
+
+            <li class="nav-item"><a class="nav-link" href="{% url 'video_list' %}">Videos</a></li>
+            <li class="nav-item"><a class="nav-link" href="{% url 'channel_list' %}">Channels</a></li>
+            <li class="nav-item"><a class="nav-link" href="{% url 'music_list' %}">Music</a></li>
+            <li class="nav-item"><a class="nav-link" href="{% url 'music_playlist_list' %}">Playlists</a></li>
+
             {% if user.is_authenticated %}
               {% if user.is_superuser %}
-                <li><a href="{% url 'scheduled_task' %}">Scheduled Task</a></li>
+                <li class="nav-item"><a class="nav-link" href="{% url 'scheduled_task' %}">Scheduled Task</a></li>
               {% else %}
                 {% for group in user.groups.all %}
                   {% if group.name == 'admin' %}
-                    <li><a href="{% url 'scheduled_task' %}">Scheduled Task</a></li>
+                    <li class="nav-item"><a class="nav-link" href="{% url 'scheduled_task' %}">Scheduled Task</a></li>
                   {% endif %}
                 {% endfor %}
               {% endif %}
             {% endif %}
-            <li><a href="#">Settings</a></li>
-            <li><a href="#">Profile</a></li>
+
+            <li class="nav-item"><a class="nav-link" href="#">Settings</a></li>
+            <li class="nav-item"><a class="nav-link" href="#">Profile</a></li>
+
           </ul>
-        </nav>
+        </div>
       </div>
-    </header>
-    <main class="container">
+    </nav>
+
+    <!-- CONTENT -->
+    <main class="content-wrapper">
       {% block content %}{% endblock %}
     </main>
-    <footer class="footer">
-      <p>&copy; 2025 Tubetto. All rights reserved.</p>
+
+    <!-- FOOTER -->
+    <footer class="text-center py-3 mt-4">
+      <p class="mb-0">&copy; 2025 Tubetto. All rights reserved.</p>
     </footer>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
   </body>
 </html>

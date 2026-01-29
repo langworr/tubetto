@@ -1,110 +1,121 @@
 {% extends "base.html" %}
 {% block content %}
 
-<div class="video-player">
-    {% if stream.stream_type == "hls" %}
-        <!-- HLS stream -->
-        <video id="video-player" width="100%" controls playsinline></video>
-        <script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.10/dist/hls.min.js" integrity="sha256-Vm13+BcSBcOwOOu27q5lx1gsvtpFe9ZwGtjGhNHzawk=" crossorigin="anonymous"></script>
-        <script>
-          document.addEventListener('DOMContentLoaded', function () {
-            const videoEl = document.getElementById('video-player');
-            const manifestUrl = "{% url 'hls_manifest' video.yt_video_id %}";
+<h1 class="mb-3">{{ video.title }}</h1>
 
-            if (videoEl.canPlayType('application/vnd.apple.mpegurl')) {
-              videoEl.src = manifestUrl;
-              return;
-            }
+<div class="mb-4">
 
-            if (window.Hls && window.Hls.isSupported()) {
-              const hls = new window.Hls({
-                enableWorker: true,
-                lowLatencyMode: true,
-              });
-              hls.loadSource(manifestUrl);
-              hls.attachMedia(videoEl);
-              hls.on(window.Hls.Events.ERROR, function (_evt, data) {
-                if (!data.fatal) {
-                  return;
-                }
-                if (data.type === window.Hls.ErrorTypes.NETWORK_ERROR) {
-                  hls.startLoad();
-                } else if (data.type === window.Hls.ErrorTypes.MEDIA_ERROR) {
-                  hls.recoverMediaError();
-                } else {
-                  hls.destroy();
-                }
-              });
+  {% if stream.stream_type == "hls" %}
+    <video id="video-player" class="w-100" controls playsinline></video>
+
+    <script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.10/dist/hls.min.js"
+            integrity="sha256-Vm13+BcSBcOwOOu27q5lx1gsvtpFe9ZwGtjGhNHzawk="
+            crossorigin="anonymous"></script>
+
+    <script>
+      document.addEventListener('DOMContentLoaded', function () {
+        const videoEl = document.getElementById('video-player');
+        const manifestUrl = "{% url 'hls_manifest' video.yt_video_id %}";
+
+        if (videoEl.canPlayType('application/vnd.apple.mpegurl')) {
+          videoEl.src = manifestUrl;
+          return;
+        }
+
+        if (window.Hls && window.Hls.isSupported()) {
+          const hls = new window.Hls({
+            enableWorker: true,
+            lowLatencyMode: true,
+          });
+          hls.loadSource(manifestUrl);
+          hls.attachMedia(videoEl);
+          hls.on(window.Hls.Events.ERROR, function (_evt, data) {
+            if (!data.fatal) return;
+
+            if (data.type === window.Hls.ErrorTypes.NETWORK_ERROR) {
+              hls.startLoad();
+            } else if (data.type === window.Hls.ErrorTypes.MEDIA_ERROR) {
+              hls.recoverMediaError();
             } else {
-              videoEl.outerHTML = '<p>HLS playback is not supported in this browser.</p>';
+              hls.destroy();
             }
           });
-        </script>
-    {% elif stream.stream_type == "progressive" %}
-        <!-- Progressive MP4 stream -->
-        <video width="100%" controls>
-            <source src="{% url 'progressive_file' video.yt_video_id %}" type="video/mp4">
-            Your browser does not support the video tag.
-        </video>
-    {% else %}
-        <p>Stream type not supported: {{ stream.stream_type }}</p>
-    {% endif %}
+        } else {
+          videoEl.outerHTML = '<p>HLS playback is not supported in this browser.</p>';
+        }
+      });
+    </script>
+
+  {% elif stream.stream_type == "progressive" %}
+    <video class="w-100" controls>
+      <source src="{% url 'progressive_file' video.yt_video_id %}" type="video/mp4">
+      Your browser does not support the video tag.
+    </video>
+
+  {% else %}
+    <p>Stream type not supported: {{ stream.stream_type }}</p>
+  {% endif %}
+
 </div>
 
-<div class="video-info">
-    <h1>{{ video.title }}</h1>
+<div class="mb-4">
+  {% if video.description %}
     <p>{{ video.description }}</p>
-    <p><strong>Duration:</strong> {{ video.duration }} seconds</p>
+  {% endif %}
+  <p><strong>Duration:</strong> {{ video.duration }} seconds</p>
 </div>
 
-<section style="margin-top: 1rem;">
-  <h2>Metadata</h2>
-  <table style="width:100%; max-width: 640px; border-collapse: collapse;">
-    <tbody>
-      <tr>
-        <th style="text-align:left; padding:0.4rem;">Video ID</th>
-        <td style="padding:0.4rem;">{{ video.yt_video_id }}</td>
-      </tr>
-      <tr>
-        <th style="text-align:left; padding:0.4rem;">Duration</th>
-        <td style="padding:0.4rem;">{{ video.duration_display|default:"—" }}</td>
-      </tr>
-      <tr>
-        <th style="text-align:left; padding:0.4rem;">Upload Date</th>
-        <td style="padding:0.4rem;">{{ video.upload_date|date:"Y-m-d" }}</td>
-      </tr>
-      <tr>
-        <th style="text-align:left; padding:0.4rem;">Channel</th>
-        <td style="padding:0.4rem;">
-          {% if video.channel_title %}
-            {{ video.channel_title }}
-          {% elif video.channel %}
-            {{ video.channel.title }}
-          {% else %}
-            —
-          {% endif %}
-          {% if video.channel_external_id %}
-            <span style="color:#666;">({{ video.channel_external_id }})</span>
-          {% endif %}
-        </td>
-      </tr>
-      <tr>
-        <th style="text-align:left; padding:0.4rem;">Uploader</th>
-        <td style="padding:0.4rem;">
-          {{ video.uploader|default:"—" }}
-          {% if video.uploader_id %}
-            <span style="color:#666;">({{ video.uploader_id }})</span>
-          {% endif %}
-        </td>
-      </tr>
-    </tbody>
-  </table>
+<section class="mb-4">
+  <h2 class="mb-2">Metadata</h2>
+
+  <div class="table-responsive" style="max-width: 640px;">
+    <table class="table table-sm table-striped align-middle">
+      <tbody>
+        <tr>
+          <th scope="row">Video ID</th>
+          <td>{{ video.yt_video_id }}</td>
+        </tr>
+        <tr>
+          <th scope="row">Duration</th>
+          <td>{{ video.duration_display|default:"—" }}</td>
+        </tr>
+        <tr>
+          <th scope="row">Upload Date</th>
+          <td>{{ video.upload_date|date:"Y-m-d" }}</td>
+        </tr>
+        <tr>
+          <th scope="row">Channel</th>
+          <td>
+            {% if video.channel_title %}
+              {{ video.channel_title }}
+            {% elif video.channel %}
+              {{ video.channel.title }}
+            {% else %}
+              —
+            {% endif %}
+            {% if video.channel_external_id %}
+              <span class="text-muted">({{ video.channel_external_id }})</span>
+            {% endif %}
+          </td>
+        </tr>
+        <tr>
+          <th scope="row">Uploader</th>
+          <td>
+            {{ video.uploader|default:"—" }}
+            {% if video.uploader_id %}
+              <span class="text-muted">({{ video.uploader_id }})</span>
+            {% endif %}
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
 </section>
 
 {% if video.description %}
-<section style="margin-top: 1.5rem;">
-  <h2>Description</h2>
-  <div style="white-space: pre-wrap; border: 1px solid #eee; padding: 0.75rem; background-color: #fafafa;">
+<section class="mb-4">
+  <h2 class="mb-2">Description</h2>
+  <div class="border rounded p-3 bg-light" style="white-space: pre-wrap;">
     {{ video.description }}
   </div>
 </section>

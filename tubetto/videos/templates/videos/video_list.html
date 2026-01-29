@@ -1,45 +1,49 @@
 {% extends "base.html" %}
 {% block content %}
-<h1>Available Videos</h1>
-<p>
-  <a href="{% url 'channel_list' %}">View channels</a>
-</p>
-<table style="width:100%; border-collapse: collapse;">
-  <thead>
-    <tr style="text-align:left; border-bottom: 1px solid #ccc;">
-      <th style="padding: 0.5rem;">Title</th>
-      <th style="padding: 0.5rem;">Duration</th>
-      <th style="padding: 0.5rem;">Upload Date</th>
-      <th style="padding: 0.5rem;">Channel</th>
-      <th style="padding: 0.5rem;">Uploader</th>
+
+<h1 class="mb-3">Available Videos</h1>
+
+<p><a href="{% url 'channel_list' %}">View channels</a></p>
+
+<div class="table-responsive">
+<table class="table table-striped table-hover table-sm align-middle">
+  <thead class="table-light">
+    <tr>
+      <th>Title</th>
+      <th>Duration</th>
+      <th>Upload Date</th>
+      <th>Channel</th>
+      <th>Uploader</th>
     </tr>
   </thead>
   <tbody>
-  {% for v in videos %}
-    <tr style="border-bottom: 1px solid #eee;">
-      <td style="padding: 0.5rem;"><a href="{% url 'video_detail' v.yt_video_id %}">{{ v.title }}</a></td>
-      <td style="padding: 0.5rem;">{{ v.duration_display|default:"—" }}</td>
-      <td style="padding: 0.5rem;">
-        {% if v.upload_date %}
-          {{ v.upload_date|date:"Y-m-d" }}
-        {% else %}
-          —
-        {% endif %}
-      </td>
-      <td style="padding: 0.5rem;">
-        {% if v.channel_title %}
-          {{ v.channel_title }}
-        {% elif v.channel %}
-          {{ v.channel.title }}
-        {% else %}
-          —
-        {% endif %}
-      </td>
-      <td style="padding: 0.5rem;">{{ v.uploader|default:"—" }}</td>
-    </tr>
-  {% empty %}
-    <tr><td colspan="5" style="padding:0.5rem;">No videos available.</td></tr>
-  {% endfor %}
+    {% for v in videos %}
+      <tr>
+        <td><a href="{% url 'video_detail' v.yt_video_id %}">{{ v.title }}</a></td>
+        <td>{{ v.duration_display|default:"—" }}</td>
+        <td>
+          {% if v.upload_date %}
+            {{ v.upload_date|date:"Y-m-d" }}
+          {% else %}
+            —
+          {% endif %}
+        </td>
+        <td>
+          {% if v.channel_title %}
+            {{ v.channel_title }}
+          {% elif v.channel %}
+            {{ v.channel.title }}
+          {% else %}
+            —
+          {% endif %}
+        </td>
+        <td>{{ v.uploader|default:"—" }}</td>
+      </tr>
+    {% empty %}
+      <tr><td colspan="5">No videos available.</td></tr>
+    {% endfor %}
   </tbody>
 </table>
+</div>
+
 {% endblock %}

@@ -1,53 +1,61 @@
 {% extends "base.html" %}
 {% block content %}
-<h1>{{ playlist.title }}</h1>
+
+<h1 class="mb-3">{{ playlist.title }}</h1>
+
 <p>
   <a href="{% url 'music_playlist_list' %}">Back to playlists</a> |
   <a href="{% url 'music_list' %}">Music tracks</a>
 </p>
 
 {% if playlist.description %}
-  <p>{{ playlist.description }}</p>
+  <p class="mb-3">{{ playlist.description }}</p>
 {% endif %}
 
 {% if entries %}
-  <section style="margin-bottom: 1.5rem;">
+
+  <div class="mb-4">
     <p><strong>Total tracks:</strong> {{ entries|length }}</p>
-    <p style="margin-top:0.5rem;">
-      <a href="{{ playlist_stream_url }}?format=m3u" style="padding:0.5rem 1rem; background:#34495e; color:white; border-radius:4px; text-decoration:none; margin-left:0.5rem;">Download M3U</a>
-      <a href="{% url 'publish_playlist' playlist.id %}" style="padding:0.5rem 1rem; background:#27ae60; color:white; border-radius:4px; text-decoration:none; margin-left:0.5rem;">Publish</a>
+
+    <p class="mt-2">
+      <a href="{{ playlist_stream_url }}?format=m3u" class="me-2">Download M3U</a>
+      <a href="{% url 'publish_playlist' playlist.id %}" class="me-2">Publish</a>
+
       {% if playlist.published_m3u_path %}
-        <a href="/media/{{ playlist.published_m3u_path }}" target="_blank" style="padding:0.5rem 1rem; background:#16a085; color:white; border-radius:4px; text-decoration:none; margin-left:0.5rem;">View Published M3U</a>
+        <a href="/media/{{ playlist.published_m3u_path }}" target="_blank">View Published M3U</a>
       {% endif %}
     </p>
-  </section>
+  </div>
 
-  <table style="width:100%; border-collapse: collapse;">
-    <thead>
-      <tr style="text-align:left; border-bottom: 1px solid #ccc;">
-        <th style="padding: 0.5rem;">#</th>
-        <th style="padding: 0.5rem;">Title</th>
-        <th style="padding: 0.5rem;">Artist</th>
-        <th style="padding: 0.5rem;">Duration</th>
-        <th style="padding: 0.5rem;">Actions</th>
+  <div class="table-responsive">
+  <table class="table table-striped table-hover table-sm align-middle">
+    <thead class="table-light">
+      <tr>
+        <th>#</th>
+        <th>Title</th>
+        <th>Artist</th>
+        <th>Duration</th>
+        <th>Actions</th>
       </tr>
     </thead>
     <tbody>
     {% for entry in entries %}
-      <tr style="border-bottom: 1px solid #eee;">
-        <td style="padding: 0.5rem;">{{ entry.position }}</td>
-        <td style="padding: 0.5rem;">{{ entry.track.title }}</td>
-        <td style="padding: 0.5rem;">{{ entry.track.artist|default:"—" }}</td>
-        <td style="padding: 0.5rem;">{{ entry.track.duration_display|default:"—" }}</td>
-        <td style="padding: 0.5rem;">
+      <tr>
+        <td>{{ entry.position }}</td>
+        <td>{{ entry.track.title }}</td>
+        <td>{{ entry.track.artist|default:"—" }}</td>
+        <td>{{ entry.track.duration_display|default:"—" }}</td>
+        <td>
           <a href="{% url 'music_detail' entry.track.id %}">Details</a>
         </td>
       </tr>
     {% endfor %}
     </tbody>
   </table>
+  </div>
+
 {% else %}
   <p>No tracks in this playlist yet.</p>
 {% endif %}
-{% endblock %}
 
+{% endblock %}

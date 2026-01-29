@@ -1,23 +1,24 @@
 {% extends "base.html" %}
 {% block content %}
-<h1>{{ track.title }}</h1>
-<p>
-  <a href="{% url 'music_list' %}">Back to music library</a>
-</p>
-<section style="margin-bottom: 1.5rem;">
+
+<h1 class="mb-3">{{ track.title }}</h1>
+
+<p><a href="{% url 'music_list' %}">Back to music library</a></p>
+
+<div class="mb-4">
   <p><strong>Artist:</strong> {{ track.artist|default:"—" }}</p>
   <p><strong>Album:</strong> {{ track.album|default:"—" }}</p>
   <p><strong>Duration:</strong> {{ track.duration_display|default:"—" }}</p>
   <p><strong>YouTube ID:</strong> {{ track.yt_video_id }}</p>
-</section>
+</div>
 
 {% if stream_url %}
-  <audio controls autoplay style="width:100%;">
+  <audio controls autoplay class="w-100">
     <source src="{{ stream_url }}" type="{{ content_type|default:'audio/mpeg' }}">
     Your browser does not support the audio element.
   </audio>
 {% else %}
   <p>No audio source available for streaming.</p>
 {% endif %}
-{% endblock %}
 
+{% endblock %}
