@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block content %}
+
+<h1 class="mb-3">{{ video.title }}</h1>
+
+<p class="mb-3">Comments (approved)</p>
+
+<ul class="list-group mb-3">
+  {% for c in comments %}
+    <li class="list-group-item">
+      <div class="fw-semibold">{{ c.author|default:"Anonymous" }}</div>
+      <small class="text-muted">{{ c.published }}</small>
+      <div class="mt-2">{{ c.text }}</div>
+      <small class="text-muted d-block mt-1">Likes: {{ c.like_count }}</small>
+    </li>
+  {% empty %}
+    <li class="list-group-item">No comments.</li>
+  {% endfor %}
+</ul>
+
+<p><a href="{% url 'video_detail' video.yt_video_id %}">Back to video</a></p>
+
+{% endblock %}

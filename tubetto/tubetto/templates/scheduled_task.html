@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% block title %}Scheduled Task - Tubetto{% endblock %}
+{% block content %}
+
+<h1 class="mb-3">Scheduled Tasks</h1>
+<p>Run individual tasks or all tasks at once:</p>
+
+<div class="d-flex flex-wrap gap-2 my-4">
+
+  <form method="post">
+    {% csrf_token %}
+    <button type="submit" name="update_channels" class="btn btn-primary btn-sm">
+      1. Update Channels Metadata
+    </button>
+  </form>
+
+  <form method="post">
+    {% csrf_token %}
+    <button type="submit" name="scan_videos" class="btn btn-success btn-sm">
+      2. Scan Channel Videos
+    </button>
+  </form>
+
+  <form method="post">
+    {% csrf_token %}
+    <button type="submit" name="update_videos_metadata" class="btn btn-purple btn-sm" style="background:#9b59b6;color:white;">
+      3. Update Videos Metadata
+    </button>
+  </form>
+
+  <form method="post">
+    {% csrf_token %}
+    <button type="submit" name="update_music_tracks" class="btn btn-warning btn-sm text-white">
+      4. Update Music Tracks Metadata
+    </button>
+  </form>
+
+  <form method="post">
+    {% csrf_token %}
+    <button type="submit" name="run_all" class="btn btn-dark btn-sm fw-bold">
+      Run All Tasks
+    </button>
+  </form>
+
+</div>
+
+{% if results %}
+<div class="mt-4 p-3 bg-light rounded border">
+  <h2 class="mb-3">Task Results: {{ task_name }}</h2>
+
+  {# Mantengo la tua logica, solo con spacing Bootstrap #}
+  {% include "partials/scheduled_task_results.html" %}
+</div>
+{% endif %}
+
+{% endblock %}

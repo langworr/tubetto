@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% block content %}
+
+<h1 class="mb-3">{{ playlist.title }}</h1>
+
+<p>
+  <a href="{% url 'music_playlist_list' %}">Back to playlists</a> |
+  <a href="{% url 'music_list' %}">Music tracks</a>
+</p>
+
+{% if playlist.description %}
+  <p class="mb-3">{{ playlist.description }}</p>
+{% endif %}
+
+{% if entries %}
+
+  <div class="mb-4">
+    <p><strong>Total tracks:</strong> {{ entries|length }}</p>
+
+    <p class="mt-2">
+      <a href="{{ playlist_stream_url }}?format=m3u" class="me-2">Download M3U</a>
+      <a href="{% url 'publish_playlist' playlist.id %}" class="me-2">Publish</a>
+
+      {% if playlist.published_m3u_path %}
+        <a href="/media/{{ playlist.published_m3u_path }}" target="_blank">View Published M3U</a>
+      {% endif %}
+    </p>
+  </div>
+
+  <div class="table-responsive">
+  <table class="table table-striped table-hover table-sm align-middle">
+    <thead class="table-light">
+      <tr>
+        <th>#</th>
+        <th>Title</th>
+        <th>Artist</th>
+        <th>Duration</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for entry in entries %}
+      <tr>
+        <td>{{ entry.position }}</td>
+        <td>{{ entry.track.title }}</td>
+        <td>{{ entry.track.artist|default:"—" }}</td>
+        <td>{{ entry.track.duration_display|default:"—" }}</td>
+        <td>
+          <a href="{% url 'music_detail' entry.track.id %}">Details</a>
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+
+{% else %}
+  <p>No tracks in this playlist yet.</p>
+{% endif %}
+
+{% endblock %}

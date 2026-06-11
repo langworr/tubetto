@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block content %}
+
+<h1 class="mb-3">{{ channel.title|default:channel.yt_channel_id }}</h1>
+
+<p>
+  <a href="{% url 'channel_list' %}">Back to channel list</a> |
+  <a href="{% url 'video_list' %}">Videos without channel</a>
+</p>
+
+<div class="table-responsive">
+<table class="table table-striped table-hover table-sm align-middle">
+  <thead class="table-light">
+    <tr>
+      <th>Title</th>
+      <th>Duration</th>
+      <th>Upload Date</th>
+      <th>Uploader</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for v in videos %}
+      <tr>
+        <td><a href="{% url 'video_detail' v.yt_video_id %}">{{ v.title }}</a></td>
+        <td>{{ v.duration_display|default:"—" }}</td>
+        <td>{{ v.upload_date|date:"Y-m-d"|default:"—" }}</td>
+        <td>{{ v.uploader|default:"—" }}</td>
+      </tr>
+    {% empty %}
+      <tr><td colspan="4">No videos available for this channel.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+</div>
+
+{% endblock %}
