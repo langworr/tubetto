@@ -166,47 +166,81 @@ def video_list(request):
 @login_required
 def channel_list(request):
     """
-    Render the channel list page with pagination.
+    Render the channel list page with pagination, search, and view modes.
 
-    Shows all channels ordered by title and YouTube channel id.
+    Lists all channels with optional search by title and view mode switching
+    between list (table) and tile (thumbnail grid) views.
 
     Args:
         request (HttpRequest): Incoming request.
 
     Returns:
-        HttpResponse: Rendered template with paginated channels queryset in context.
+        HttpResponse: Rendered template with paginated channels queryset,
+        search query, and view mode in context.
     """
-    channels = Channel.objects.all().order_by('title', 'yt_channel_id')
+    channels = Channel.objects.all().order_by('title')
+    
+    # Search by title
+    search_query = request.GET.get('search', '')
+    if search_query:
+        channels = channels.filter(title__icontains=search_query)
+    
+    # View mode (list or tile, default: tile)
+    view_mode = request.GET.get('view', 'tile')
+    if view_mode not in ['list', 'tile']:
+        view_mode = 'tile'
+    
     paginator = Paginator(channels, 50)  # Show 50 channels per page
     page_number = request.GET.get('page')
     page_obj = paginator.get_page(page_number)
-    return render(request, "videos/channel_list.html", {"page_obj": page_obj})
+    
+    return render(request, "videos/channel_list.html", {
+        "page_obj": page_obj,
+        "channels": page_obj,
+        "search_query": search_query,
+        "view_mode": view_mode,
+    })
 
 
 @login_required
 def channel_detail(request, channel_id):
     """
-    Show details for a single channel and its videos.
+    Show details for a single channel and its videos with pagination, search, and view modes.
 
     Args:
         request (HttpRequest): Incoming request.
-        channel_id (int): Primary key of the Channel to display.
+        channel_id (str): YouTube channel ID of the Channel to display.
 
     Returns:
         HttpResponse: Rendered template containing the channel and its videos,
         or Http404 if the channel does not exist.
     """
-    channel = get_object_or_404(Channel, pk=channel_id)
-    videos = (
-        Video.objects.filter(channel=channel)
-        .order_by('-upload_date', '-created_at')
-    )
+    channel = get_object_or_404(Channel, yt_channel_id=channel_id)
+    videos = Video.objects.filter(channel=channel).order_by('-upload_date', '-created_at')
+    
+    # Search by title
+    search_query = request.GET.get('search', '')
+    if search_query:
+        videos = videos.filter(title__icontains=search_query)
+    
+    # View mode (list or tile, default: tile)
+    view_mode = request.GET.get('view', 'tile')
+    if view_mode not in ['list', 'tile']:
+        view_mode = 'tile'
+    
+    paginator = Paginator(videos, 50)  # Show 50 videos per page
+    page_number = request.GET.get('page')
+    page_obj = paginator.get_page(page_number)
+    
     return render(
         request,
         "videos/channel_detail.html",
         {
             "channel": channel,
-            "videos": videos,
+            "videos": page_obj,
+            "page_obj": page_obj,
+            "search_query": search_query,
+            "view_mode": view_mode,
         },
     )
 

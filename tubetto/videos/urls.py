@@ -21,7 +21,7 @@ from . import views
 urlpatterns = [
     path('', views.video_list, name='video_list'),
     path('channels/', views.channel_list, name='channel_list'),
-    path('channels/<int:channel_id>/', views.channel_detail, name='channel_detail'),
+    path('channels/<str:channel_id>/', views.channel_detail, name='channel_detail'),
     path('watch/<str:video_id>/', views.video_detail, name='video_detail'),
 
     # Streaming proxy
