@@ -23,17 +23,6 @@ class ChannelAdmin(admin.ModelAdmin):
         self.message_user(request, f"Scansione completata. Video creati/aggiornati: {count}", level=messages.INFO)
     scan_channels.short_description = "Scan selected channels for videos"
 
-    def save_model(self, request, obj, form, change):
-        logger.debug("Saving channel %s via admin (change=%s)", obj.yt_channel_id, change)
-        super().save_model(request, obj, form, change)
-        # On create or update, run a scan
-        try:
-            created_or_updated = self._scan_channel(obj)
-            logger.debug("Channel scan completed for %s, created/updated=%s", obj.yt_channel_id, created_or_updated)
-        except Exception as e:
-            logger.exception("Error scanning channel %s during admin save", obj.yt_channel_id)
-            self.message_user(request, f"Error scanning channel: {e}", level=messages.ERROR)
-
     @staticmethod
     @transaction.atomic
     def _scan_channel(channel: Channel) -> int:
