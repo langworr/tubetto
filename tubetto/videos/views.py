@@ -127,21 +127,40 @@ def progressive_file(request, video_id):
 @login_required
 def video_list(request):
     """
-    Render the video list page with pagination.
+    Render the video list page with pagination, search, and view modes.
 
-    Lists videos that do not belong to a channel (or adjust the queryset as needed).
+    Lists all videos with optional search by title and view mode switching
+    between list (table) and tile (thumbnail grid) views.
 
     Args:
         request (HttpRequest): Incoming request.
 
     Returns:
-        HttpResponse: Rendered template with paginated videos queryset in context.
+        HttpResponse: Rendered template with paginated videos queryset,
+        search query, and view mode in context.
     """
-    videos = Video.objects.filter(channel__isnull=True).order_by('-upload_date', '-created_at')
+    videos = Video.objects.all().order_by('-upload_date', '-created_at')
+    
+    # Search by title
+    search_query = request.GET.get('search', '')
+    if search_query:
+        videos = videos.filter(title__icontains=search_query)
+    
+    # View mode (list or tile, default: tile)
+    view_mode = request.GET.get('view', 'tile')
+    if view_mode not in ['list', 'tile']:
+        view_mode = 'tile'
+    
     paginator = Paginator(videos, 50)  # Show 50 videos per page
     page_number = request.GET.get('page')
     page_obj = paginator.get_page(page_number)
-    return render(request, "videos/video_list.html", {"page_obj": page_obj})
+    
+    return render(request, "videos/video_list.html", {
+        "page_obj": page_obj,
+        "videos": page_obj,
+        "search_query": search_query,
+        "view_mode": view_mode,
+    })
 
 
 @login_required
