@@ -589,12 +589,12 @@ def update_channels_metadata() -> Dict[str, any]:
     return results
 
 
-def scan_channel_videos() -> Dict[str, any]:
+def scan_channel_videos(channel_ids: Optional[List[int]] = None) -> Dict[str, any]:
     """
-    Scan all videos in each channel and insert/update them in the database.
+    Scan videos for a set of channels and insert/update them in the database.
 
-    For each channel, fetches all videos from YouTube, creates/updates Video
-    and ChannelVideo records, and fetches full metadata for each video.
+    If channel_ids is None, scans all channels. Otherwise, scans only the
+    supplied Channel primary keys.
 
     Returns:
         dict: Result summary with keys 'channels_scanned', 'videos_scanned',
@@ -609,6 +609,9 @@ def scan_channel_videos() -> Dict[str, any]:
     }
 
     channels = Channel.objects.all()
+    if channel_ids is not None:
+        channels = channels.filter(pk__in=channel_ids)
+
     for channel in channels:
         try:
             # Clear cache for this channel to ensure fresh data

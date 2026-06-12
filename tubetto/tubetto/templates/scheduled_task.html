@@ -3,54 +3,127 @@
 {% block content %}
 
 <h1 class="mb-3">Scheduled Tasks</h1>
-<p>Run individual tasks or all tasks at once:</p>
+<p>Run individual tasks or all tasks at once.</p>
 
-<div class="d-flex flex-wrap gap-2 my-4">
+{% if running_tasks.exists %}
+  <div class="alert alert-info" role="alert">
+    There {% if running_tasks.count == 1 %}is{% else %}are{% endif %} currently {{ running_tasks.count }} running task{% if running_tasks.count != 1 %}s{% endif %}.
+  </div>
+{% endif %}
 
-  <form method="post">
-    {% csrf_token %}
-    <button type="submit" name="update_channels" class="btn btn-primary btn-sm">
-      1. Update Channels Metadata
-    </button>
-  </form>
+<div class="row g-3 mb-4">
+  <div class="col-12 col-lg-4">
+    <form method="post" class="d-grid gap-2">
+      {% csrf_token %}
+      <button type="submit" name="update_channels" class="btn btn-primary btn-sm">
+        1. Update Channels Metadata
+      </button>
+    </form>
+  </div>
 
-  <form method="post">
-    {% csrf_token %}
-    <button type="submit" name="scan_videos" class="btn btn-success btn-sm">
-      2. Scan Channel Videos
-    </button>
-  </form>
+  <div class="col-12 col-lg-4">
+    <form method="post" class="d-grid gap-2">
+      {% csrf_token %}
+      <div class="btn-group">
+        <button type="submit" name="scan_videos" class="btn btn-success btn-sm">
+          2. Scan Channel Videos
+        </button>
+        <button type="button" class="btn btn-success btn-sm dropdown-toggle dropdown-toggle-split" data-bs-toggle="dropdown" aria-expanded="false">
+          <span class="visually-hidden">Toggle Dropdown</span>
+        </button>
+        <ul class="dropdown-menu p-3" data-bs-auto-close="outside" style="min-width: 220px;">
+          <li>
+            <div class="form-check">
+              <input class="form-check-input" type="checkbox" id="chk_all" name="scan_channels_selected" value="all">
+              <label class="form-check-label" for="chk_all">All Channels</label>
+            </div>
+          </li>
+          {% for channel in channels %}
+          <li>
+            <div class="form-check">
+              <input class="form-check-input" type="checkbox" id="chk_{{ channel.id }}" name="scan_channels_selected" value="{{ channel.id }}">
+              <label class="form-check-label" for="chk_{{ channel.id }}">{{ channel.title|default:channel.yt_channel_id }}</label>
+            </div>
+          </li>
+          {% endfor %}
+        </ul>
+      </div>
+    </form>
+  </div>
 
-  <form method="post">
-    {% csrf_token %}
-    <button type="submit" name="update_videos_metadata" class="btn btn-purple btn-sm" style="background:#9b59b6;color:white;">
-      3. Update Videos Metadata
-    </button>
-  </form>
-
-  <form method="post">
-    {% csrf_token %}
-    <button type="submit" name="update_music_tracks" class="btn btn-warning btn-sm text-white">
-      4. Update Music Tracks Metadata
-    </button>
-  </form>
-
-  <form method="post">
-    {% csrf_token %}
-    <button type="submit" name="run_all" class="btn btn-dark btn-sm fw-bold">
-      Run All Tasks
-    </button>
-  </form>
-
+  <div class="col-12 col-lg-4">
+    <div class="d-grid gap-2">
+      <form method="post">
+        {% csrf_token %}
+        <button type="submit" name="update_videos_metadata" class="btn btn-purple btn-sm" style="background:#9b59b6;color:white;">
+          3. Update Videos Metadata
+        </button>
+      </form>
+      <form method="post">
+        {% csrf_token %}
+        <button type="submit" name="update_music_tracks" class="btn btn-warning btn-sm text-white">
+          4. Update Music Tracks Metadata
+        </button>
+      </form>
+      <form method="post">
+        {% csrf_token %}
+        <button type="submit" name="run_all" class="btn btn-dark btn-sm fw-bold">
+          Run All Tasks
+        </button>
+      </form>
+    </div>
+  </div>
 </div>
 
 {% if results %}
-<div class="mt-4 p-3 bg-light rounded border">
-  <h2 class="mb-3">Task Results: {{ task_name }}</h2>
-
-  {# Mantengo la tua logica, solo con spacing Bootstrap #}
-  {% include "partials/scheduled_task_results.html" %}
-</div>
+  <div class="mt-4 p-3 bg-light rounded border">
+    <h2 class="mb-3">Task Results: {{ task_name }}</h2>
+    <pre class="bg-white p-3 rounded" style="white-space: pre-wrap; word-wrap: break-word;">{{ results_text }}</pre>
+  </div>
 {% endif %}
+
+<div class="mt-5">
+  <h2 class="mb-3">Recent Task History</h2>
+  <div class="table-responsive">
+    <table class="table table-sm table-bordered align-middle">
+      <thead class="table-light">
+        <tr>
+          <th>Start</th>
+          <th>End</th>
+          <th>Task</th>
+          <th>Status</th>
+          <th>User</th>
+          <th>Channels</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for entry in history_entries %}
+          <tr>
+            <td>{{ entry.started_at }}</td>
+            <td>{% if entry.ended_at %}{{ entry.ended_at }}{% else %}-{% endif %}</td>
+            <td>{{ entry.get_task_type_display }}</td>
+            <td>{{ entry.get_status_display }}</td>
+            <td>{{ entry.user }}</td>
+            <td>
+              {% if entry.channels %}
+                {% if 'all' in entry.channels %}
+                  All
+                {% else %}
+                  {{ entry.channels|join:", " }}
+                {% endif %}
+              {% else %}
+                -
+              {% endif %}
+            </td>
+          </tr>
+        {% empty %}
+          <tr>
+            <td colspan="6" class="text-center">No task history yet.</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
 
 {% endblock %}
