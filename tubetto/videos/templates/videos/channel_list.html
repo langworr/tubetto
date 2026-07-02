@@ -46,10 +46,9 @@
               <a href="{% url 'channel_detail' c.yt_channel_id %}" class="text-decoration-none text-dark">{{ c.title|default:c.yt_channel_id }}</a>
             </h5>
             <p class="card-text text-muted small mb-1">
-              {{ c.yt_channel_id }}
+              {{ c.description }}
             </p>
             <p class="card-text small mb-0">
-              <span class="text-muted">{{ c.subscriber_count|default:"—" }} subscribers</span>
               {% if c.video_count %}
                 <span class="text-muted ms-2">{{ c.video_count }} videos</span>
               {% endif %}
