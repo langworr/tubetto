@@ -34,14 +34,15 @@ Functions:
 - metadata_from_info(data): Extract persistent metadata fields from yt-dlp info dict.
 """
 
-import logging
-import subprocess
+import asyncio
 import json
+import logging
+import re
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import List, Dict, Optional, Any
-import yt_dlp
-from yt_dlp.utils import DownloadError
+
+from crawlee.http_clients import ImpitHttpClient
 
 from music.models import MusicTrack
 from videos.models import Channel, Video, ChannelVideo
@@ -82,91 +83,202 @@ def _cache_set(video_id: str, data: dict, ttl: int = 90) -> None:
     _CACHE[video_id] = (time.time() + ttl, data)
 
 
+def _run_async(coro):
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return asyncio.run(coro)
+
+    import concurrent.futures
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+        return executor.submit(lambda: asyncio.run(coro)).result()
+
+
+def _fetch_page(url: str, timeout: int = 25) -> str:
+    async def _request() -> str:
+        client = ImpitHttpClient(browser="firefox")
+        async with client:
+            response = await client.send_request(url, timeout=timedelta(seconds=timeout))
+            return (await response.read()).decode("utf-8", "ignore")
+
+    return _run_async(_request())
+
+
+def _extract_json_object(text: str, marker: str) -> dict:
+    marker_pos = text.find(marker)
+    if marker_pos == -1:
+        return {}
+
+    start = text.find("{", marker_pos)
+    if start == -1:
+        return {}
+
+    depth = 0
+    quote = False
+    escape = False
+    snippet = ""
+    for index in range(start, len(text)):
+        char = text[index]
+        if quote:
+            if escape:
+                escape = False
+            elif char == "\\":
+                escape = True
+            elif char == '"':
+                quote = False
+            continue
+
+        if char == '"':
+            quote = True
+        elif char == "{":
+            depth += 1
+        elif char == "}":
+            depth -= 1
+            if depth == 0:
+                snippet = text[start:index + 1]
+                break
+
+    if not snippet:
+        return {}
+
+    try:
+        return json.loads(snippet)
+    except json.JSONDecodeError:
+        return {}
+
+
+def _extract_player_response(html: str) -> dict:
+    player_response = _extract_json_object(html, "ytInitialPlayerResponse")
+    if player_response:
+        return player_response
+    return {}
+
+
+def _extract_initial_data(html: str) -> dict:
+    return _extract_json_object(html, "ytInitialData")
+
+
+def _normalize_format(format_data: dict) -> dict:
+    mime_type = format_data.get("mimeType") or format_data.get("mime_type") or ""
+    ext = format_data.get("ext")
+    if not ext and mime_type:
+        if "mp4" in mime_type:
+            ext = "mp4"
+        elif "webm" in mime_type:
+            ext = "webm"
+        elif "m4a" in mime_type:
+            ext = "m4a"
+
+    acodec = format_data.get("audioCodec") or format_data.get("audio_sample_rate") or None
+    vcodec = format_data.get("videoCodec") or format_data.get("vcodec") or None
+    if mime_type.startswith("audio/") and not acodec:
+        acodec = "audio"
+    elif mime_type.startswith("video/") and not vcodec:
+        vcodec = "video"
+
+    return {
+        "url": format_data.get("url") or "",
+        "ext": ext,
+        "mime_type": mime_type,
+        "acodec": acodec,
+        "vcodec": vcodec,
+        "tbr": format_data.get("bitrate") or format_data.get("averageBitrate") or None,
+    }
+
+
+def _select_audio_format_from_streaming_data(streaming_data: dict) -> dict | None:
+    formats = streaming_data.get("adaptiveFormats") or streaming_data.get("formats") or []
+    audio_only: List[dict] = []
+    for item in formats:
+        normalized = _normalize_format(item)
+        if normalized.get("url") and (normalized.get("vcodec") in (None, "none")) and normalized.get("acodec"):
+            audio_only.append(normalized)
+    if not audio_only:
+        return None
+
+    def score(item: dict) -> tuple:
+        ext = (item.get("ext") or "").lower()
+        is_preferred = 1 if ext in ("m4a", "mp4", "mp4a") else 0
+        return is_preferred, item.get("tbr") or 0
+
+    audio_only = sorted(audio_only, key=score, reverse=True)
+    return audio_only[0]
+
+
 def resolve_video_info(video_id: str) -> dict:
     """
-    Fetch complete video metadata from YouTube using yt-dlp.
+    Fetch video metadata from YouTube using Crawlee.
 
-    Uses yt-dlp to extract video information including title, description,
-    formats, duration, and more. Results are cached for the TTL period.
-
-    Args:
-        video_id (str): YouTube video identifier.
-
-    Returns:
-        dict: Full yt-dlp info dictionary with video metadata.
-
-    Raises:
-        RuntimeError: If yt-dlp returns a non-zero exit code.
+    The implementation retrieves the watch page through Crawlee and parses the
+    embedded player payload, which is sufficient for metadata and stream
+    selection within this application.
     """
     cached = _cache_get(video_id)
     if cached:
         return cached
-    ydl_opts = {
-        'format': 'bestvideo+bestaudio/best',
-        'skip_download': True,
-        'no_warnings': True,
-        'quiet': True,
-    }
+
     url = f"https://www.youtube.com/watch?v={video_id}"
+    html = _fetch_page(url)
+    player_response = _extract_player_response(html)
+    if not player_response:
+        raise RuntimeError("Unable to resolve video metadata via Crawlee")
+
+    video_details = player_response.get("videoDetails", {})
+    streaming_data = player_response.get("streamingData", {})
+    formats = [_normalize_format(format_data) for format_data in (streaming_data.get("formats") or []) + (streaming_data.get("adaptiveFormats") or [])]
+    thumbnails = video_details.get("thumbnail", {}).get("thumbnails", [])
+    thumbnail_url = thumbnails[-1].get("url") if thumbnails else ""
+    duration = video_details.get("lengthSeconds")
     try:
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            data = ydl.extract_info(url, download=False)
-    except DownloadError as e:
-        raise RuntimeError(f"yt-dlp error: {e.args[0] if e.args else 'unknown error'}") from e
+        duration = int(duration) if duration is not None else None
+    except (TypeError, ValueError):
+        duration = None
+
+    data = {
+        "id": video_details.get("videoId") or video_id,
+        "title": video_details.get("title"),
+        "description": video_details.get("shortDescription"),
+        "duration": duration,
+        "thumbnail": thumbnail_url,
+        "channel": video_details.get("author"),
+        "uploader": video_details.get("author"),
+        "channel_id": video_details.get("channelId"),
+        "view_count": video_details.get("viewCount"),
+        "formats": formats,
+        "adaptiveFormats": [format_item for format_item in formats if format_item.get("url")],
+        "streamingData": streaming_data,
+        "player_response": player_response,
+    }
 
     _cache_set(video_id, data)
     return data
 
 
-def select_best_audio(formats: list[dict]) -> dict | None:
-    """
-    Pick the best audio-only format from a list of available formats.
-
-    Filters formats with no video codec but valid audio codec, then selects
-    the highest quality, preferring m4a/mp4 over webm.
-
-    Args:
-        formats (list[dict]): List of format dicts from yt-dlp.
-
-    Returns:
-        dict or None: Best audio format with keys 'url', 'ext', 'acodec', or None if none available.
-    """
-    audio_only = []
-    for f in formats:
-        if (f.get("vcodec") in (None, "none")) and (f.get("acodec") and f.get("acodec") != "none") and f.get("url"):
-            audio_only.append(f)
+def select_best_audio(formats: list[dict] | dict) -> dict | None:
+    """Pick the best audio-only format from Crawlee-derived stream data."""
+    if isinstance(formats, dict):
+        return _select_audio_format_from_streaming_data(formats)
+    audio_only: List[dict] = []
+    for item in formats:
+        normalized = item if isinstance(item, dict) else _normalize_format(item)
+        if normalized.get("url") and (normalized.get("vcodec") in (None, "none")) and normalized.get("acodec"):
+            audio_only.append(normalized)
     if not audio_only:
         return None
-    # Prefer m4a/mp4 over webm when bitrates are comparable
 
-    def score(f: dict) -> tuple:
-        ext = (f.get("ext") or "").lower()
-        is_m4a = 1 if ext in ("m4a", "mp4", "mp4a") else 0
-        return (is_m4a, f.get("tbr") or f.get("abr") or 0)
+    def score(item: dict) -> tuple:
+        ext = (item.get("ext") or "").lower()
+        is_preferred = 1 if ext in ("m4a", "mp4", "mp4a") else 0
+        return is_preferred, item.get("tbr") or 0
+
     audio_only = sorted(audio_only, key=score, reverse=True)
-    best = audio_only[0]
-    return {"url": best.get("url"), "ext": best.get("ext"), "acodec": best.get("acodec")}
+    return audio_only[0]
 
 
 def resolve_audio_stream(video_id: str) -> dict:
-    """
-    Return a direct audio stream URL and metadata for a given YouTube video.
-
-    Resolves video info, selects the best audio-only format, and returns
-    stream details including URL, codec, and video metadata.
-
-    Args:
-        video_id (str): YouTube video identifier.
-
-    Returns:
-        dict: Dictionary with keys 'video_id', 'title', 'duration', 'thumbnail',
-              'stream_url', 'ext', 'acodec'.
-
-    Raises:
-        RuntimeError: If no audio-only stream is available.
-    """
+    """Return a direct audio stream URL and metadata for a given YouTube video."""
     info = resolve_video_info(video_id)
-    audio = select_best_audio(info.get("formats", []))
+    audio = select_best_audio(info.get("streamingData", {})) or select_best_audio(info.get("formats", []))
     if not audio:
         raise RuntimeError("No audio-only stream available")
     return {
@@ -341,55 +453,28 @@ def resolve_stream_manifest(video_id: str) -> dict:
 
 
 def resolve_video_comments(video_id: str, max_comments: int = 50) -> list[dict]:
-    """
-    Fetch YouTube comments for a video using yt-dlp.
-
-    Extracts up to max_comments top-level comments and normalizes them.
-    Results are cached. On errors, returns an empty list.
-
-    Args:
-        video_id (str): YouTube video identifier.
-        max_comments (int): Maximum number of comments to fetch (default 50).
-
-    Returns:
-        list[dict]: List of normalized comment dicts with keys 'author', 'text',
-                   'like_count', 'timestamp', 'published'.
-    """
+    """Fetch YouTube comments for a video using Crawlee-derived page data."""
     cached = _cache_get(f"comments:{video_id}:{max_comments}")
     if cached is not None:
         return cached
-    ydl_opts = {
-        'skip_download': True,
-        'no_warnings': True,
-        'quiet': True,
-        'extractor_args': {
-            'youtube': {
-                'comments': 'all',
-                'comment_sort': 'top',
-                'max_comments': max_comments,
-            }
-        },
-    }
 
     url = f"https://www.youtube.com/watch?v={video_id}"
-    data = {}
-
     try:
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            data = ydl.extract_info(url, download=False)
-
-    except DownloadError:
+        html = _fetch_page(url)
+    except Exception:
         return []
 
-    comments = data.get("comments") or []
+    player_response = _extract_player_response(html)
+    comments = player_response.get("contents", {}).get("twoColumnWatchNextResults", {}).get("results", {}).get("results", {}).get("comments", [])
     normalized = []
-    for c in comments:
+    for comment in comments[:max_comments]:
+        comment_text = comment.get("commentText", {})
         normalized.append({
-            "author": c.get("author") or "",
-            "text": c.get("text") or "",
-            "like_count": c.get("like_count") or 0,
-            "timestamp": c.get("timestamp") or 0,
-            "published": c.get("published") or "",
+            "author": comment.get("authorText", {}).get("simpleText") or "",
+            "text": comment_text.get("simpleText") or "",
+            "like_count": comment.get("likes", 0),
+            "timestamp": 0,
+            "published": "",
         })
 
     _cache_set(f"comments:{video_id}:{max_comments}", normalized, ttl=120)
@@ -397,68 +482,43 @@ def resolve_video_comments(video_id: str, max_comments: int = 50) -> list[dict]:
 
 
 def resolve_related_videos(video_id: str, limit: int = 12) -> list[dict]:
-    """
-    Get suggested/related videos for a video using yt-dlp metadata.
-
-    Parses related_videos or related data from yt-dlp info and extracts
-    video IDs, titles, thumbnails, and channels. Results are cached.
-
-    Args:
-        video_id (str): YouTube video identifier.
-        limit (int): Maximum number of related videos to return (default 12).
-
-    Returns:
-        list[dict]: List of related video dicts with keys 'yt_video_id', 'title',
-                   'thumbnail_url', 'channel'.
-    """
+    """Get suggested videos by parsing the watch page with Crawlee."""
     cached = _cache_get(f"related:{video_id}:{limit}")
     if cached is not None:
         return cached
-    info = resolve_video_info(video_id)
-    related = info.get("related_videos") or info.get("related") or []
-    # Some formats:
-    # - list of dicts with 'id' or 'url', 'title', 'thumbnails'
+
+    url = f"https://www.youtube.com/watch?v={video_id}"
+    try:
+        html = _fetch_page(url)
+    except Exception:
+        return []
+
+    matches = re.findall(r"(?:/watch\?v=|/shorts/)([A-Za-z0-9_-]{11})", html)
     results = []
-    for r in related:
-        vid = r.get("id") or (r.get("url") or "").split("v=")[-1]
-        if not vid:
+    for video_id_match in matches:
+        if video_id_match == video_id:
             continue
-        thumb = None
-        thumbs = r.get("thumbnails") or []
-        if thumbs:
-            thumb = thumbs[-1].get("url") or thumbs[0].get("url")
         results.append({
-            "yt_video_id": vid,
-            "title": r.get("title") or "",
-            "thumbnail_url": thumb or "",
-            "channel": r.get("uploader") or r.get("channel") or "",
+            "yt_video_id": video_id_match,
+            "title": "",
+            "thumbnail_url": "",
+            "channel": "",
         })
         if len(results) >= limit:
             break
+
     _cache_set(f"related:{video_id}:{limit}", results, ttl=180)
     return results
 
 
 def list_channel_videos_flat(channel_id: str, limit: Optional[int] = None) -> List[Dict]:
-    """
-    Fetch a flat list of videos from a YouTube channel using yt-dlp.
-
-    Retrieves videos from a channel's videos page with optional limit.
-    Results are cached. Returns empty list on error.
-
-    Args:
-        channel_id (str): YouTube channel identifier (e.g., UCxxxx...).
-        limit (int or None): Maximum videos to fetch; None fetches all available.
-
-    Returns:
-        list[dict]: List of video dicts with keys 'yt_video_id' and 'title'.
-    """
+    """Fetch a flat list of videos from a YouTube channel using Crawlee."""
     cache_key = f"chflat:{channel_id}:{limit if limit else 'all'}"
     cached = _cache_get(cache_key)
     if cached is not None:
         return cached
-    # Use the channel's videos page - yt-dlp will handle pagination
-    if channel_id.startswith("@"):  # YouTube handle
+
+    if channel_id.startswith("@"):
         url = f"https://www.youtube.com/{channel_id}/videos"
     elif channel_id.startswith("UC"):
         url = f"https://www.youtube.com/channel/{channel_id}/videos"
@@ -466,89 +526,48 @@ def list_channel_videos_flat(channel_id: str, limit: Optional[int] = None) -> Li
         url = f"https://www.youtube.com/c/{channel_id}/videos"
 
     logger.debug("Fetching channel videos for %s from %s", channel_id, url)
-    cmd = [
-        "yt-dlp", "-J", "--no-warnings", "--flat-playlist",
-    ]
-    # If limit is None, fetch all videos by setting playlist-end to -1
-    # This tells yt-dlp to fetch all available videos
-    if limit is None:
-        cmd.extend(["--playlist-end", "-1"])
-    else:
-        cmd.extend(["--playlist-end", str(limit)])
-    cmd.append(url)
     try:
-        proc = subprocess.run(cmd, capture_output=True, text=True, check=False, timeout=60)
-    except subprocess.TimeoutExpired as e:
-        logger.error("yt-dlp timeout for channel %s after %s seconds", channel_id, e.timeout)
+        html = _fetch_page(url)
+    except Exception:
         return []
-    if proc.returncode != 0:
-        logger.error(
-            "yt-dlp returned non-zero code for channel %s: %s; stderr=%s",
-            channel_id,
-            proc.returncode,
-            proc.stderr.strip(),
-        )
-        # Return empty list on error - errors are handled by the caller
-        return []
-    try:
-        data = json.loads(proc.stdout)
-    except json.JSONDecodeError:
-        return []
-    entries = data.get("entries") or []
+
+    matches = re.findall(r"(?:/watch\?v=|/shorts/)([A-Za-z0-9_-]{11})", html)
     results: List[Dict] = []
-    for e in entries:
-        vid = e.get("id")
-        if not vid:
+    seen = set()
+    for video_id_match in matches:
+        if video_id_match in seen or video_id_match == channel_id:
             continue
+        seen.add(video_id_match)
         results.append({
-            "yt_video_id": vid,
-            "title": e.get("title") or "",
+            "yt_video_id": video_id_match,
+            "title": "",
         })
-        # Only break if we have a limit and reached it
         if limit and len(results) >= limit:
             break
+
     _cache_set(cache_key, results, ttl=300)
     logger.debug("Fetched %d videos for channel %s", len(results), channel_id)
     return results
 
 
 def resolve_channel_metadata(channel_id: str) -> Dict[str, Optional[str]]:
-    """
-    Fetch channel metadata from YouTube using yt-dlp.
-
-    Extracts channel title, description, thumbnail, subscriber count,
-    and video count from a YouTube channel.
-
-    Args:
-        channel_id (str): YouTube channel identifier.
-
-    Returns:
-        dict: Channel metadata with keys 'title', 'description', 'thumbnail',
-              'subscriber_count', 'video_count', or empty dict on error.
-    """
+    """Fetch channel metadata from YouTube using Crawlee."""
     url = f"https://www.youtube.com/channel/{channel_id}"
-    ydl_opts = {
-        'skip_download': True,
-        'no_warnings': True,
-        'quiet': True,
-    }
-
-    data = {}
-
     try:
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(url, download=False)
-            data = info
-
-    except DownloadError:
+        html = _fetch_page(url)
+    except Exception:
         return {}
 
+    title_match = re.search(r"<meta property=\"og:title\" content=\"([^\"]+)\">", html)
+    thumbnail_match = re.search(r"<meta property=\"og:image\" content=\"([^\"]+)\">", html)
+    description_match = re.search(r"<meta name=\"description\" content=\"([^\"]+)\">", html)
+
     return {
-        "title": data.get("channel") or data.get("uploader") or "",
-        "description": data.get("description") or "",
-        "thumbnail": data.get("thumbnail") or "",
-        "subscriber_count": data.get("channel_follower_count") or None,
-        "video_count": data.get("playlist_count") or None,
+        "title": title_match.group(1) if title_match else "",
+        "description": description_match.group(1) if description_match else "",
+        "thumbnail": thumbnail_match.group(1) if thumbnail_match else "",
+        "subscriber_count": None,
+        "video_count": None,
     }
 
 

@@ -47,4 +47,5 @@ tomlkit==0.13.3
 types-PyYAML==6.0.12.20250915
 typing_extensions==4.15.0
 urllib3==2.5.0
+crawlee==1.7.3
 yt-dlp==2025.10.22
