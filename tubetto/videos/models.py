@@ -11,6 +11,7 @@ class Channel(models.Model):
     objects = models.Manager()
     title = models.CharField(max_length=255, blank=True)
     yt_channel_id = models.CharField(max_length=128, unique=True)
+    yt_channel_url = models.CharField(max_length=50, blank=True)
     description = models.TextField(blank=True)
     thumbnail = models.URLField(blank=True)
     subscriber_count = models.PositiveIntegerField(null=True, blank=True)
