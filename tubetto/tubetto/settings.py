@@ -59,6 +59,8 @@ MIDDLEWARE = [
 ]
 
 ROOT_URLCONF = 'tubetto.urls'
+# manage slash at the end of the URL
+APPEND_SLASH = False
 
 TEMPLATES = [
     {
@@ -147,7 +149,8 @@ STATIC_URL = 'static/'
 STATIC_ROOT = BASE_DIR / 'staticfiles'
 
 # Media files (user uploaded content)
-MEDIA_URL = 'media/'
+# MEDIA_URL is used for  API/browser access, while MEDIA_ROOT is the filesystem path where files are stored.
+# MEDIA_URL = 'media/'
 MEDIA_ROOT = BASE_DIR / 'media'
 
 # Default primary key field type
@@ -188,4 +191,5 @@ if not DEBUG:
 
 # Security headers
 SECURE_REFERRER_POLICY = 'strict-origin-when-cross-origin'
-CONTENT_SECURITY_POLICY = "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; media-src 'self' https:; connect-src 'self' https:; frame-src 'self' https: www.youtube.com;"
+# pylint: disable=line-too-long
+CONTENT_SECURITY_POLICY = "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; media-src 'self' https:; connect-src 'self' https:; frame-src 'self' https: www.youtube.com;"  # noqa: E501

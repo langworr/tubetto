@@ -23,8 +23,8 @@ from drf_spectacular.views import SpectacularAPIView, SpectacularRedocView, Spec
 from . import views
 
 urlpatterns = [
-    path('', TemplateView.as_view(template_name='home.html'), name='home'),
     path('admin/', admin.site.urls),
+    path('', TemplateView.as_view(template_name='home.html'), name='home'),
     path('video/', include('videos.urls')),
     path('music/', include('music.urls')),
     path('oidc/', include('mozilla_django_oidc.urls')),

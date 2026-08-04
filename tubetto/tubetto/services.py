@@ -1,45 +1,13 @@
-"""
-Services module for Tubetto.
-
-This module provides utility functions for interacting with YouTube via yt-dlp,
-extracting and caching video/audio metadata, resolving stream manifests, and
-performing batch metadata updates for videos, channels, and music tracks.
-
-Key functionality:
-- Caching: In-memory TTL-based cache for yt-dlp queries to reduce API calls.
-- Video Info: Resolve video metadata, comments, and related videos using yt-dlp.
-- Audio Extraction: Select and return the best audio-only stream for a video.
-- Stream Selection: Choose between progressive (single-file), HLS, or DASH manifests.
-- Channel Management: Scan channels for videos and update channel/video metadata.
-- Music Metadata: Update music track metadata from YouTube sources.
-
-Functions:
-- _cache_get(video_id): Retrieve cached data if not expired.
-- _cache_set(video_id, data, ttl): Store data in cache with TTL.
-- resolve_video_info(video_id): Fetch complete video metadata via yt-dlp.
-- select_best_audio(formats): Pick the best audio-only format from available formats.
-- resolve_audio_stream(video_id): Return a direct audio stream URL for a video.
-- update_music_tracks_metadata(): Update metadata for all music tracks in the database.
-- _select_progressive(formats): Choose the best progressive (single-file) stream.
-- select_manifest(data): Determine the best stream manifest type (progressive/HLS/DASH).
-- resolve_stream_manifest(video_id): Resolve and return stream manifest info for a video.
-- resolve_video_comments(video_id, max_comments): Fetch YouTube comments for a video.
-- resolve_related_videos(video_id, limit): Get suggested/related videos.
-- list_channel_videos_flat(channel_id, limit): Fetch a flat list of videos from a channel.
-- resolve_channel_metadata(channel_id): Fetch channel metadata using yt-dlp.
-- update_channels_metadata(): Update metadata for all channels in the database.
-- scan_channel_videos(): Scan and index all videos from all channels.
-- update_videos_metadata(): Update metadata for all videos in the database.
-- run_scheduled_task(): Run all scheduled tasks (channels, scan, videos, music) in sequence.
-- metadata_from_info(data): Extract persistent metadata fields from yt-dlp info dict.
-"""
-
+from http.cookiejar import LoadError, MozillaCookieJar
 import logging
+import re
 import subprocess
 import json
 import time
 from datetime import datetime
 from typing import List, Dict, Optional, Any
+from django.conf import settings
+import requests
 import yt_dlp
 from yt_dlp.utils import DownloadError
 
@@ -49,6 +17,11 @@ from videos.models import Channel, Video, ChannelVideo
 logger = logging.getLogger(__name__)
 
 _CACHE = {}  # {video_id: (expires_epoch, data)}
+
+YT_USER_AGENT = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+)
 
 
 def _cache_get(video_id: str) -> Optional[dict]:
@@ -512,44 +485,86 @@ def list_channel_videos_flat(channel_id: str, limit: Optional[int] = None) -> Li
     return results
 
 
-def resolve_channel_metadata(channel_id: str) -> Dict[str, Optional[str]]:
-    """
-    Fetch channel metadata from YouTube using yt-dlp.
+def resolve_channel_metadata(
+        channel_id: str,
+        cookies_file: Optional[str] = "cookies.txt",
+        regex_file: Optional[str] = "regex_list.json",
+) -> Dict[str, Optional[str]]:
+    if channel_id.startswith("@"):
+        url = f"https://www.youtube.com/{channel_id}"
+    else:
+        url = f"https://www.youtube.com/channel/{channel_id}"
 
-    Extracts channel title, description, thumbnail, subscriber count,
-    and video count from a YouTube channel.
+    cookies_path = settings.MEDIA_ROOT / cookies_file
+    regex_path = settings.MEDIA_ROOT / regex_file
 
-    Args:
-        channel_id (str): YouTube channel identifier.
-
-    Returns:
-        dict: Channel metadata with keys 'title', 'description', 'thumbnail',
-              'subscriber_count', 'video_count', or empty dict on error.
-    """
-    url = f"https://www.youtube.com/channel/{channel_id}"
-    ydl_opts = {
-        'skip_download': True,
-        'no_warnings': True,
-        'quiet': True,
-    }
-
-    data = {}
-
-    try:
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(url, download=False)
-            data = info
-
-    except DownloadError:
+    if not cookies_path.exists():
+        logger.warning("Cookies file %s not found", cookies_path)
         return {}
 
-    return {
-        "title": data.get("channel") or data.get("uploader") or "",
-        "description": data.get("description") or "",
-        "thumbnail": data.get("thumbnail") or "",
-        "subscriber_count": data.get("channel_follower_count") or None,
-        "video_count": data.get("playlist_count") or None,
-    }
+    reg_ex = {}
+    if regex_path.exists():
+        reg_ex = json.loads(regex_path.read_text(encoding="utf-8"))
+    else:
+        logger.warning("Regex file %s not found", regex_path)
+        return {}
+
+    jar = MozillaCookieJar(str(cookies_path))
+    try:
+        jar.load(ignore_discard=True, ignore_expires=True)
+    except (OSError, LoadError) as e:
+        logger.error("Errore nel caricare i cookie da %s: %s", cookies_path, str(e))
+        return {}
+
+    session = requests.Session()
+    session.cookies = jar
+    session.headers.update({
+        "User-Agent": YT_USER_AGENT,
+        "Accept-Language": "it-IT,it;q=0.9,en-US;q=0.8,en;q=0.7",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    })
+
+    logger.warning("Fetching channel page for %s", channel_id)
+    try:
+        response = session.get(url, allow_redirects=True, timeout=15)
+    except (OSError, LoadError) as e:
+        logger.error("Error fetching channel page for %s: %s", channel_id, str(e))
+        return {}
+
+    logger.warning(
+        "Status %s, Final URL %s, len=%d",
+        response.status_code, response.url, len(response.text),
+    )
+
+    if "consent.youtube.com" in response.url or "consent.google.com" in response.url:
+        logger.error(
+            "Redirect alla pagina di consenso per %s: i cookie non sono "
+            "stati accettati da questo IP/contesto (Final URL=%s)",
+            channel_id, response.url,
+        )
+        return {}
+
+    html = response.text
+
+    standard_keys = [
+        "channel_id",
+        "channel_url",
+        "title",
+        "description",
+        "thumbnail",
+    ]
+
+    metadata = {}
+    for key in standard_keys:
+        pattern = reg_ex.get(key)
+        if pattern:
+            match = re.search(pattern, html)
+            metadata[key] = match.group(1) if match else None
+        else:
+            metadata[key] = None
+
+    logger.warning("Resolved metadata for channel %s: %s", channel_id, metadata)
+    return metadata
 
 
 def update_channels_metadata() -> Dict[str, any]:
