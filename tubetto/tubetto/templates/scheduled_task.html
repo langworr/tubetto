@@ -52,17 +52,47 @@
   </div>
 
   <div class="col-12 col-lg-4">
+    <form method="post" class="d-grid gap-2">
+      {% csrf_token %}
+      <div class="btn-group">
+        <button type="submit" name="scan_channel_tabs" class="btn text-white" style="background-color: #da22ff; border-color: #da22ff;">
+          3. Scan Channel Tabs
+        </button>
+        <button type="button" class="btn btn-success btn-sm dropdown-toggle dropdown-toggle-split" style="background-color: #da22ff; border-color: #da22ff;" data-bs-toggle="dropdown" aria-expanded="false">
+          <span class="visually-hidden">Toggle Dropdown</span>
+        </button>
+        <ul class="dropdown-menu p-3" data-bs-auto-close="outside" style="min-width: 220px;">
+          <li>
+            <div class="form-check">
+              <input class="form-check-input" type="checkbox" id="chk_all" name="scan_channels_selected" value="all">
+              <label class="form-check-label" for="chk_all">All Channels</label>
+            </div>
+          </li>
+          {% for channel in channels %}
+          <li>
+            <div class="form-check">
+              <input class="form-check-input" type="checkbox" id="chk_{{ channel.id }}" name="scan_channels_selected" value="{{ channel.id }}">
+              <label class="form-check-label" for="chk_{{ channel.id }}">{{ channel.title|default:channel.yt_channel_id }}</label>
+            </div>
+          </li>
+          {% endfor %}
+        </ul>
+      </div>
+    </form>
+  </div>
+
+  <div class="col-12 col-lg-4">
     <div class="d-grid gap-2">
       <form method="post">
         {% csrf_token %}
         <button type="submit" name="update_videos_metadata" class="btn btn-purple btn-sm" style="background:#9b59b6;color:white;">
-          3. Update Videos Metadata
+          4. Update Videos Metadata
         </button>
       </form>
       <form method="post">
         {% csrf_token %}
         <button type="submit" name="update_music_tracks" class="btn btn-warning btn-sm text-white">
-          4. Update Music Tracks Metadata
+          5. Update Music Tracks Metadata
         </button>
       </form>
       <form method="post">

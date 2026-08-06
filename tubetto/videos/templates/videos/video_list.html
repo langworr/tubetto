@@ -1,33 +1,79 @@
 {% extends "base.html" %}
 {% block content %}
-
-<h1 class="mb-3">Available Videos</h1>
-
-<p><a href="{% url 'channel_list' %}">View channels</a></p>
-
+ 
+{% if channel %}
+  <h1 class="mb-3">{{ channel.title|default:channel.yt_channel_id }}</h1>
+  <p>
+    <a href="{% url 'channel_list' %}">Back to channel list</a> |
+    <a href="{% url 'video_list' %}">All videos</a>
+  </p>
+{% else %}
+  <h1 class="mb-3">Available Videos</h1>
+  <p><a href="{% url 'channel_list' %}">View channels</a></p>
+{% endif %}
+ 
+<!-- Tab filter (only when scoped to a single channel) -->
+{% if has_tabs %}
+  <div class="mb-3 d-flex flex-wrap align-items-center gap-2">
+    <span class="text-muted small">Tab:</span>
+ 
+    <a href="{% url 'channel_detail' channel.yt_channel_id %}?view={{ view_mode }}{% if search_query %}&search={{ search_query }}{% endif %}"
+       class="btn btn-sm {% if not selected_tab %}btn-primary{% else %}btn-outline-secondary{% endif %}">
+      Tutti
+    </a>
+ 
+    {% for t in tabs_simple %}
+      <a href="{% url 'channel_detail' channel.yt_channel_id %}?view={{ view_mode }}&tab={{ t.pk }}{% if search_query %}&search={{ search_query }}{% endif %}"
+         class="btn btn-sm {% if selected_tab.pk == t.pk %}btn-primary{% else %}btn-outline-secondary{% endif %}">
+        {{ t.name }}
+      </a>
+    {% endfor %}
+ 
+    {% for type, type_tabs in tabs_grouped.items %}
+      <div class="dropdown">
+        <button class="btn btn-sm dropdown-toggle {% if selected_tab.type == type %}btn-primary{% else %}btn-outline-secondary{% endif %}"
+                type="button" data-bs-toggle="dropdown" aria-expanded="false">
+          {{ type|title }}{% if selected_tab.type == type %}: {{ selected_tab.name }}{% endif %}
+        </button>
+        <ul class="dropdown-menu">
+          {% for t in type_tabs %}
+            <li>
+              <a class="dropdown-item {% if selected_tab.pk == t.pk %}active{% endif %}"
+                 href="{% url 'channel_detail' channel.yt_channel_id %}?view={{ view_mode }}&tab={{ t.pk }}{% if search_query %}&search={{ search_query }}{% endif %}">
+                {{ t.name }}
+              </a>
+            </li>
+          {% endfor %}
+        </ul>
+      </div>
+    {% endfor %}
+  </div>
+{% endif %}
+ 
 <!-- Search and View Controls -->
 <div class="d-flex justify-content-between align-items-center mb-3">
   <form method="GET" class="d-flex gap-2">
     <input type="text" name="search" class="form-control" placeholder="Search by title..." value="{{ search_query }}">
     <input type="hidden" name="view" value="{{ view_mode }}">
+    {% if selected_tab %}<input type="hidden" name="tab" value="{{ selected_tab.pk }}">{% endif %}
     <button type="submit" class="btn btn-primary">Search</button>
     {% if search_query %}
-      <a href="{% url 'video_list' %}?view={{ view_mode }}" class="btn btn-secondary">Clear</a>
+      <a href="{% if channel %}{% url 'channel_detail' channel.yt_channel_id %}{% else %}{% url 'video_list' %}{% endif %}?view={{ view_mode }}{% if selected_tab %}&tab={{ selected_tab.pk }}{% endif %}" class="btn btn-secondary">Clear</a>
     {% endif %}
   </form>
-  
+ 
   <div class="btn-group" role="group">
-    <a href="{% url 'video_list' %}?view=tile{% if search_query %}&search={{ search_query }}{% endif %}" 
+    <a href="{% if channel %}{% url 'channel_detail' channel.yt_channel_id %}{% else %}{% url 'video_list' %}{% endif %}?view=tile{% if selected_tab %}&tab={{ selected_tab.pk }}{% endif %}{% if search_query %}&search={{ search_query }}{% endif %}"
        class="btn btn-outline-primary {% if view_mode == 'tile' %}active{% endif %}">
       <i class="bi bi-grid-3x3-gap-fill"></i> Tile
     </a>
-    <a href="{% url 'video_list' %}?view=list{% if search_query %}&search={{ search_query }}{% endif %}" 
+    <a href="{% if channel %}{% url 'channel_detail' channel.yt_channel_id %}{% else %}{% url 'video_list' %}{% endif %}?view=list{% if selected_tab %}&tab={{ selected_tab.pk }}{% endif %}{% if search_query %}&search={{ search_query }}{% endif %}"
        class="btn btn-outline-primary {% if view_mode == 'list' %}active{% endif %}">
       <i class="bi bi-list-ul"></i> List
     </a>
   </div>
 </div>
-
+ 
 <!-- Tile View -->
 {% if view_mode == 'tile' %}
   <div class="row row-cols-1 row-cols-md-2 row-cols-lg-3 row-cols-xl-4 g-4">
@@ -46,10 +92,12 @@
               <a href="{% url 'video_detail' v.yt_video_id %}" class="text-decoration-none text-dark">{{ v.title }}</a>
             </h5>
             <p class="card-text text-muted small mb-1">
-              {% if v.channel_title %}
-                {{ v.channel_title }}
-              {% elif v.channel %}
-                {{ v.channel.title }}
+              {% if not channel %}
+                {% if v.channel_title %}
+                  {{ v.channel_title }}
+                {% elif v.channel %}
+                  {{ v.channel.title }}
+                {% endif %}
               {% endif %}
             </p>
             <p class="card-text small mb-0">
@@ -68,7 +116,7 @@
     {% endfor %}
   </div>
 {% endif %}
-
+ 
 <!-- List View -->
 {% if view_mode == 'list' %}
   <div class="table-responsive">
@@ -78,7 +126,7 @@
           <th>Title</th>
           <th>Duration</th>
           <th>Upload Date</th>
-          <th>Channel</th>
+          {% if not channel %}<th>Channel</th>{% endif %}
           <th>Uploader</th>
         </tr>
       </thead>
@@ -94,57 +142,59 @@
                 —
               {% endif %}
             </td>
-            <td>
-              {% if v.channel_title %}
-                {{ v.channel_title }}
-              {% elif v.channel %}
-                {{ v.channel.title }}
-              {% else %}
-                —
-              {% endif %}
-            </td>
+            {% if not channel %}
+              <td>
+                {% if v.channel_title %}
+                  {{ v.channel_title }}
+                {% elif v.channel %}
+                  {{ v.channel.title }}
+                {% else %}
+                  —
+                {% endif %}
+              </td>
+            {% endif %}
             <td>{{ v.uploader|default:"—" }}</td>
           </tr>
         {% empty %}
-          <tr><td colspan="5">No videos available.</td></tr>
+          <tr><td colspan="{% if channel %}4{% else %}5{% endif %}">No videos available.</td></tr>
         {% endfor %}
       </tbody>
     </table>
   </div>
 {% endif %}
-
+ 
 <!-- Pagination -->
 {% if page_obj.has_other_pages %}
   <nav aria-label="Page navigation" class="mt-4">
     <ul class="pagination justify-content-center">
       {% if page_obj.has_previous %}
         <li class="page-item">
-          <a class="page-link" href="?page=1&view={{ view_mode }}{% if search_query %}&search={{ search_query }}{% endif %}">First</a>
+          <a class="page-link" href="?page=1&view={{ view_mode }}{% if selected_tab %}&tab={{ selected_tab.pk }}{% endif %}{% if search_query %}&search={{ search_query }}{% endif %}">First</a>
         </li>
         <li class="page-item">
-          <a class="page-link" href="?page={{ page_obj.previous_page_number }}&view={{ view_mode }}{% if search_query %}&search={{ search_query }}{% endif %}">Previous</a>
+          <a class="page-link" href="?page={{ page_obj.previous_page_number }}&view={{ view_mode }}{% if selected_tab %}&tab={{ selected_tab.pk }}{% endif %}{% if search_query %}&search={{ search_query }}{% endif %}">Previous</a>
         </li>
       {% else %}
         <li class="page-item disabled"><span class="page-link">First</span></li>
         <li class="page-item disabled"><span class="page-link">Previous</span></li>
       {% endif %}
-      
+ 
       {% for num in page_obj.paginator.page_range %}
         {% if page_obj.number == num %}
           <li class="page-item active"><span class="page-link">{{ num }}</span></li>
         {% elif num > page_obj.number|add:'-3' and num < page_obj.number|add:'3' %}
           <li class="page-item">
-            <a class="page-link" href="?page={{ num }}&view={{ view_mode }}{% if search_query %}&search={{ search_query }}{% endif %}">{{ num }}</a>
+            <a class="page-link" href="?page={{ num }}&view={{ view_mode }}{% if selected_tab %}&tab={{ selected_tab.pk }}{% endif %}{% if search_query %}&search={{ search_query }}{% endif %}">{{ num }}</a>
           </li>
         {% endif %}
       {% endfor %}
-      
+ 
       {% if page_obj.has_next %}
         <li class="page-item">
-          <a class="page-link" href="?page={{ page_obj.next_page_number }}&view={{ view_mode }}{% if search_query %}&search={{ search_query }}{% endif %}">Next</a>
+          <a class="page-link" href="?page={{ page_obj.next_page_number }}&view={{ view_mode }}{% if selected_tab %}&tab={{ selected_tab.pk }}{% endif %}{% if search_query %}&search={{ search_query }}{% endif %}">Next</a>
         </li>
         <li class="page-item">
-          <a class="page-link" href="?page={{ page_obj.paginator.num_pages }}&view={{ view_mode }}{% if search_query %}&search={{ search_query }}{% endif %}">Last</a>
+          <a class="page-link" href="?page={{ page_obj.paginator.num_pages }}&view={{ view_mode }}{% if selected_tab %}&tab={{ selected_tab.pk }}{% endif %}{% if search_query %}&search={{ search_query }}{% endif %}">Last</a>
         </li>
       {% else %}
         <li class="page-item disabled"><span class="page-link">Next</span></li>
@@ -153,5 +203,5 @@
     </ul>
   </nav>
 {% endif %}
-
+ 
 {% endblock %}

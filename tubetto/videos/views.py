@@ -1,26 +1,4 @@
-"""
-Views for the videos app.
-
-This module provides view functions used by the videos application, including:
-- serving and proxying video streams (progressive and HLS),
-- listing and showing videos and channels,
-- rewriting HLS manifests and proxying HLS segments/keys,
-- utility helpers for URL reconstruction and authorization checks.
-
-Functions:
-- _is_video_allowed: Determine whether a video is viewable by the current policy.
-- reconstruct_segment_url: Rebuild an upstream HLS segment URL from a video manifest.
-- progressive_file: Proxy progressive MP4 stream requests with range support.
-- video_list: Render a list of videos.
-- channel_list: Render a list of channels.
-- channel_detail: Render a single channel with its videos.
-- video_detail: Show detailed info for a video and its resolved stream.
-- hls_segment: Proxy HLS media segments to clients.
-- hls_manifest: Fetch and rewrite HLS manifests to proxy segments/keys through the app.
-- hls_key: Proxy HLS encryption keys to clients.
-"""
-
-from urllib.parse import urlencode, urlparse
+from urllib.parse import urlencode, urlparse, urljoin
 import requests
 
 from django.http import HttpResponse, HttpResponseForbidden
@@ -33,8 +11,7 @@ from django_ratelimit.decorators import ratelimit
 from tubetto.services import (
     resolve_stream_manifest, resolve_video_info, metadata_from_info,
 )
-from tubetto.utils import reconstruct_segment_url
-from .models import Video, Channel
+from .models import Tab, Video, Channel
 
 
 # Allowed domains for proxy requests to prevent SSRF
@@ -125,41 +102,54 @@ def progressive_file(request, video_id):
 
 
 @login_required
-def video_list(request):
-    """
-    Render the video list page with pagination, search, and view modes.
+def video_list(request, channel_id=None):
+    channel = None
+    tabs_simple = []
+    tabs_grouped = []
+    selected_tab = None
 
-    Lists all videos with optional search by title and view mode switching
-    between list (table) and tile (thumbnail grid) views.
+    videos = Video.objects.all().order_by('title')
 
-    Args:
-        request (HttpRequest): Incoming request.
+    if channel_id:
+        channel = get_object_or_404(Channel, yt_channel_id=channel_id)
+        videos = videos.filter(channel=channel)
+        channel_tabs = list(Tab.objects.filter(channel=channel))
+        tabs_simple = [t for t in channel_tabs if t.type not in Tab.GROUPED_TYPES]
+        tabs_grouped = {}
+        for t in channel_tabs:
+            if t.type in Tab.GROUPED_TYPES:
+                tabs_grouped.setdefault(t.type, []).append(t)
 
-    Returns:
-        HttpResponse: Rendered template with paginated videos queryset,
-        search query, and view mode in context.
-    """
-    videos = Video.objects.all().order_by('-upload_date', '-created_at')
-    
-    # Search by title
+        tab_id = request.GET.get('tab')
+        if tab_id:
+            selected_tab = next((t for t in channel_tabs if str(t.pk) == tab_id), None)
+            if selected_tab:
+                videos = videos.filter(tabs=selected_tab)
+
+    videos = videos.order_by('title')
+
     search_query = request.GET.get('search', '')
     if search_query:
         videos = videos.filter(title__icontains=search_query)
-    
-    # View mode (list or tile, default: tile)
+
     view_mode = request.GET.get('view', 'tile')
     if view_mode not in ['list', 'tile']:
         view_mode = 'tile'
-    
-    paginator = Paginator(videos, 50)  # Show 50 videos per page
+
+    paginator = Paginator(videos, 50)
     page_number = request.GET.get('page')
     page_obj = paginator.get_page(page_number)
-    
+
     return render(request, "videos/video_list.html", {
-        "page_obj": page_obj,
-        "videos": page_obj,
-        "search_query": search_query,
-        "view_mode": view_mode,
+        'channel': channel,
+        'page_obj': page_obj,
+        'videos': page_obj,
+        'search_query': search_query,
+        'view_mode': view_mode,
+        'tabs_simple': tabs_simple,
+        'tabs_grouped': tabs_grouped,
+        'has_tabs': bool(tabs_simple or tabs_grouped),
+        'selected_tab': selected_tab,
     })
 
 
@@ -179,21 +169,21 @@ def channel_list(request):
         search query, and view mode in context.
     """
     channels = Channel.objects.all().order_by('title')
-    
+
     # Search by title
     search_query = request.GET.get('search', '')
     if search_query:
         channels = channels.filter(title__icontains=search_query)
-    
+
     # View mode (list or tile, default: tile)
     view_mode = request.GET.get('view', 'tile')
     if view_mode not in ['list', 'tile']:
         view_mode = 'tile'
-    
+
     paginator = Paginator(channels, 50)  # Show 50 channels per page
     page_number = request.GET.get('page')
     page_obj = paginator.get_page(page_number)
-    
+
     return render(request, "videos/channel_list.html", {
         "page_obj": page_obj,
         "channels": page_obj,
@@ -217,21 +207,21 @@ def channel_detail(request, channel_id):
     """
     channel = get_object_or_404(Channel, yt_channel_id=channel_id)
     videos = Video.objects.filter(channel=channel).order_by('-upload_date', '-created_at')
-    
+
     # Search by title
     search_query = request.GET.get('search', '')
     if search_query:
         videos = videos.filter(title__icontains=search_query)
-    
+
     # View mode (list or tile, default: tile)
     view_mode = request.GET.get('view', 'tile')
     if view_mode not in ['list', 'tile']:
         view_mode = 'tile'
-    
+
     paginator = Paginator(videos, 50)  # Show 50 videos per page
     page_number = request.GET.get('page')
     page_obj = paginator.get_page(page_number)
-    
+
     return render(
         request,
         "videos/channel_detail.html",
