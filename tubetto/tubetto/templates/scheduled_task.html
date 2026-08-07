@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% block title %}Scheduled Task - Tubetto{% endblock %}
+{% if running_tasks.exists %}{% block extra_head %}<meta http-equiv="refresh" content="5">{% endblock %}{% endif %}
 {% block content %}
 
 <h1 class="mb-3">Scheduled Tasks</h1>
@@ -105,10 +106,9 @@
   </div>
 </div>
 
-{% if results %}
-  <div class="mt-4 p-3 bg-light rounded border">
-    <h2 class="mb-3">Task Results: {{ task_name }}</h2>
-    <pre class="bg-white p-3 rounded" style="white-space: pre-wrap; word-wrap: break-word;">{{ results_text }}</pre>
+{% if task_started_message %}
+  <div class="alert alert-success" role="alert">
+    {{ task_started_message }} Segui l'avanzamento nello storico qui sotto.
   </div>
 {% endif %}
 
@@ -124,6 +124,7 @@
           <th>Status</th>
           <th>User</th>
           <th>Channels</th>
+          <th>Result</th>
         </tr>
       </thead>
       <tbody>
@@ -145,10 +146,22 @@
                 -
               {% endif %}
             </td>
+            <td>
+              {% if entry.result %}
+                <button class="btn btn-sm btn-outline-secondary" type="button" data-bs-toggle="collapse" data-bs-target="#result_{{ entry.id }}">
+                  View
+                </button>
+                <div class="collapse mt-2" id="result_{{ entry.id }}">
+                  <pre class="bg-white p-2 rounded border small" style="white-space: pre-wrap; word-wrap: break-word; max-width: 400px;">{{ entry.result }}</pre>
+                </div>
+              {% else %}
+                -
+              {% endif %}
+            </td>
           </tr>
         {% empty %}
           <tr>
-            <td colspan="6" class="text-center">No task history yet.</td>
+            <td colspan="7" class="text-center">No task history yet.</td>
           </tr>
         {% endfor %}
       </tbody>

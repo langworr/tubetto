@@ -41,6 +41,7 @@ INSTALLED_APPS = [
     'mozilla_django_oidc',
     'rest_framework',
     'drf_spectacular',
+    'django_q',
 
     'tubetto',
     'videos',
@@ -61,6 +62,15 @@ MIDDLEWARE = [
 ROOT_URLCONF = 'tubetto.urls'
 # manage slash at the end of the URL
 APPEND_SLASH = False
+
+Q_CLUSTER = {
+    'name': 'tubetto_cluster',
+    'workers': 4,
+    'recycle': 500,
+    'timeout': 300,
+    'retry': 360,
+    'orm': 'default',
+}
 
 TEMPLATES = [
     {

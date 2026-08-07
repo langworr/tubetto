@@ -1,13 +1,16 @@
-import json
-
 from django.shortcuts import render
 from django.views.generic import TemplateView
 from django.contrib.auth.decorators import login_required, user_passes_test
-from django.utils import timezone
+
+from django_q.tasks import async_task
 
 from tubetto.services import (
-    run_scheduled_task, update_channels_metadata, scan_channel_videos, update_videos_metadata,
-    update_music_tracks_metadata, sync_channel_tabs
+    run_update_channels,
+    run_scan_videos,
+    run_scan_channel_tabs,
+    run_update_videos_metadata,
+    run_update_music_tracks,
+    run_all_tasks,
 )
 from videos.models import Channel
 from .models import ScheduledTaskHistory
@@ -35,144 +38,100 @@ class HomeView(TemplateView):
         return context
 
 
+def _parse_selected_channel_ids(request):
+    """
+    Read the 'scan_channels_selected' checkboxes from the POST body.
+
+    Returns:
+        list[int] | None: Channel PKs to scope the task to, or None to mean
+        "all channels" (either the 'all' checkbox was ticked, nothing was
+        selected, or every value failed to parse as an int).
+    """
+    selected = request.POST.getlist('scan_channels_selected')
+    if 'all' in selected or not selected:
+        return None
+    parsed_ids = []
+    for channel_id in selected:
+        try:
+            parsed_ids.append(int(channel_id))
+        except (ValueError, TypeError):
+            continue
+    return parsed_ids or None
+
+
 @login_required
 @user_passes_test(_is_admin)
 def scheduled_task(request):
-    results = None
-    results_text = None
     task_name = None
-    selected_channel_ids = None
+    task_started_message = None
 
     channels = Channel.objects.all().order_by('title', 'yt_channel_id')
     history_entries = ScheduledTaskHistory.objects.all()[:10]
     running_tasks = ScheduledTaskHistory.objects.filter(ended_at__isnull=True)
 
+    _channel_scoped_tasks = {'scan_videos', 'scan_channel_tabs'}
+
     def _create_history(task_type, channel_ids=None):
+        if channel_ids:
+            channels_value = list(channel_ids)
+        elif task_type in _channel_scoped_tasks:
+            channels_value = ['all']
+        else:
+            channels_value = []
         return ScheduledTaskHistory.objects.create(
             task_type=task_type,
             user=request.user,
             status='running',
-            channels=list(channel_ids) if channel_ids else ['all'] if task_type == 'scan_videos' else [],
+            channels=channels_value,
         )
 
     if request.method == 'POST':
-        if 'scan_videos' in request.POST:
-            selected_channel_ids = request.POST.getlist('scan_channels_selected')
-            if 'all' in selected_channel_ids or not selected_channel_ids:
-                selected_channel_ids = None
-            else:
-                parsed_ids = []
-                for channel_id in selected_channel_ids:
-                    try:
-                        parsed_ids.append(int(channel_id))
-                    except (ValueError, TypeError):
-                        continue
-                selected_channel_ids = parsed_ids or None
-        elif 'scan_channel_tabs' in request.POST:
-            selected_channel_ids = request.POST.getlist('scan_channels_selected')
-            if 'all' in selected_channel_ids or not selected_channel_ids:
-                selected_channel_ids = None
-            else:
-                parsed_ids = []
-                for channel_id in selected_channel_ids:
-                    try:
-                        parsed_ids.append(int(channel_id))
-                    except (ValueError, TypeError):
-                        continue
-                selected_channel_ids = parsed_ids or None
+        selected_channel_ids = None
+        if 'scan_videos' in request.POST or 'scan_channel_tabs' in request.POST:
+            selected_channel_ids = _parse_selected_channel_ids(request)
 
         if 'update_channels' in request.POST:
             task_name = "Update Channels Metadata"
             history = _create_history('update_channels')
-            try:
-                results = update_channels_metadata()
-                history.status = 'completed'
-                history.result = json.dumps(results, indent=2, default=str)
-            except Exception as exc:
-                results = {'error': str(exc)}
-                history.status = 'failed'
-                history.result = str(exc)
-            finally:
-                history.ended_at = timezone.now()
-                history.save(update_fields=['status', 'result', 'ended_at'])
+            async_task(run_update_channels, history.id)
+
         elif 'scan_videos' in request.POST:
             task_name = "Scan Channel Videos"
             history = _create_history('scan_videos', selected_channel_ids)
-            try:
-                results = scan_channel_videos(channel_ids=selected_channel_ids)
-                history.status = 'completed'
-                history.result = json.dumps(results, indent=2, default=str)
-            except Exception as exc:
-                results = {'error': str(exc)}
-                history.status = 'failed'
-                history.result = str(exc)
-            finally:
-                history.ended_at = timezone.now()
-                history.save(update_fields=['status', 'result', 'ended_at'])
+            async_task(run_scan_videos, history.id, channel_ids=selected_channel_ids)
+
         elif 'scan_channel_tabs' in request.POST:
             task_name = "Scan Channel Tabs"
             history = _create_history('scan_channel_tabs', selected_channel_ids)
-            try:
-                results = sync_channel_tabs(channel_ids=selected_channel_ids)
-                history.status = 'completed'
-                history.result = json.dumps(results, indent=2, default=str)
-            except Exception as exc:
-                results = {'error': str(exc)}
-                history.status = 'failed'
-                history.result = str(exc)
-            finally:
-                history.ended_at = timezone.now()
-                history.save(update_fields=['status', 'result', 'ended_at'])
+            async_task(run_scan_channel_tabs, history.id, channel_ids=selected_channel_ids)
+
         elif 'update_videos_metadata' in request.POST:
             task_name = "Update Videos Metadata"
             history = _create_history('update_videos_metadata')
-            try:
-                results = update_videos_metadata()
-                history.status = 'completed'
-                history.result = json.dumps(results, indent=2, default=str)
-            except Exception as exc:
-                results = {'error': str(exc)}
-                history.status = 'failed'
-                history.result = str(exc)
-            finally:
-                history.ended_at = timezone.now()
-                history.save(update_fields=['status', 'result', 'ended_at'])
+            async_task(run_update_videos_metadata, history.id)
+
         elif 'update_music_tracks' in request.POST:
             task_name = "Update Music Tracks Metadata"
             history = _create_history('update_music_tracks')
-            try:
-                results = update_music_tracks_metadata()
-                history.status = 'completed'
-                history.result = json.dumps(results, indent=2, default=str)
-            except Exception as exc:
-                results = {'error': str(exc)}
-                history.status = 'failed'
-                history.result = str(exc)
-            finally:
-                history.ended_at = timezone.now()
-                history.save(update_fields=['status', 'result', 'ended_at'])
+            async_task(run_update_music_tracks, history.id)
+
         elif 'run_all' in request.POST:
             task_name = "All Tasks"
             history = _create_history('run_all')
-            try:
-                results = run_scheduled_task()
-                history.status = 'completed'
-                history.result = json.dumps(results, indent=2, default=str)
-            except Exception as exc:
-                results = {'error': str(exc)}
-                history.status = 'failed'
-                history.result = str(exc)
-            finally:
-                history.ended_at = timezone.now()
-                history.save(update_fields=['status', 'result', 'ended_at'])
+            async_task(run_all_tasks, history.id)
 
-        if results is not None:
-            results_text = json.dumps(results, indent=2, default=str)
+        else:
+            history = None
+
+        if task_name:
+            task_started_message = f"'{task_name}' avviato in background (task #{history.id})."
+            # Refresh so the just-created row shows up immediately as running.
+            history_entries = ScheduledTaskHistory.objects.all()[:10]
+            running_tasks = ScheduledTaskHistory.objects.filter(ended_at__isnull=True)
 
     return render(request, "scheduled_task.html", {
-        "results": results,
-        "results_text": results_text,
         "task_name": task_name,
+        "task_started_message": task_started_message,
         "channels": channels,
         "history_entries": history_entries,
         "running_tasks": running_tasks,

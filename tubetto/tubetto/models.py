@@ -7,6 +7,7 @@ class ScheduledTaskHistory(models.Model):
     TASK_TYPE_CHOICES = [
         ("update_channels", "Update Channels Metadata"),
         ("scan_videos", "Scan Channel Videos"),
+        ("scan_channel_tabs", "Scan Channel Tabs"),
         ("update_videos_metadata", "Update Videos Metadata"),
         ("update_music_tracks", "Update Music Tracks Metadata"),
         ("run_all", "All Tasks"),

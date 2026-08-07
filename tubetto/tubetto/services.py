@@ -6,6 +6,7 @@ import time
 from datetime import datetime
 from typing import List, Dict, Optional, Any
 from django.conf import settings
+from django.utils import timezone
 import requests
 import yt_dlp
 from yt_dlp.utils import DownloadError
@@ -15,6 +16,7 @@ from videos.models import Channel, Video, ChannelVideo, Tab
 
 from tubetto.constants import YT_USER_AGENT
 from tubetto.enums import YouTubeTab
+from .models import ScheduledTaskHistory
 
 logger = logging.getLogger(__name__)
 
@@ -297,8 +299,8 @@ def fetch_channel_shorts(channel_id: str, limit: Optional[int] = None) -> List[D
 def sync_channel_tabs(
         channel_ids: Optional[List[int]] = None,
         videos_per_playlist: Optional[int] = None,
-) -> Dict[str, any]:
-    results: Dict[str, any] = {
+) -> Dict[str, Any]:
+    results: Dict[str, Any] = {
         "channels_scanned": 0,
         "tabs_created": 0,
         "tabs_updated": 0,
@@ -454,7 +456,7 @@ def resolve_channel_metadata(
     return metadata
 
 
-def update_channels_metadata() -> Dict[str, any]:
+def update_channels_metadata() -> Dict[str, Any]:
     results = {
         "channels_processed": 0,
         "channels_updated": 0,
@@ -482,7 +484,7 @@ def update_channels_metadata() -> Dict[str, any]:
     return results
 
 
-def scan_channel_videos(channel_ids: Optional[List[int]] = None) -> Dict[str, any]:
+def scan_channel_videos(channel_ids: Optional[List[int]] = None) -> Dict[str, Any]:
     results = {
         "channels_scanned": 0,
         "videos_scanned": 0,
@@ -565,7 +567,7 @@ def scan_channel_videos(channel_ids: Optional[List[int]] = None) -> Dict[str, an
     return results
 
 
-def update_videos_metadata() -> Dict[str, any]:
+def update_videos_metadata() -> Dict[str, Any]:
     results = {
         "videos_processed": 0,
         "videos_updated": 0,
@@ -594,7 +596,7 @@ def update_videos_metadata() -> Dict[str, any]:
     return results
 
 
-def run_scheduled_task() -> Dict[str, any]:
+def run_scheduled_task() -> Dict[str, Any]:
     channel_results = update_channels_metadata()
     scan_results = scan_channel_videos()
     tabs_results = sync_channel_tabs()
@@ -608,6 +610,95 @@ def run_scheduled_task() -> Dict[str, any]:
         "videos": video_results,
         "music": music_results,
     }
+
+
+# --- Django-Q2 background task entry points -------------------------------
+#
+# These are the functions actually enqueued via `django_q.tasks.async_task()`
+# from the "Scheduled Task" admin page. Each one runs in the `qcluster`
+# worker process (a separate process from the web server), so it can't
+# receive/return Django model instances through the queue's serialization —
+# it takes a plain `history_id` and re-fetches the ScheduledTaskHistory row
+# itself, then writes the outcome (status/result/ended_at) back to that row
+# when the wrapped function above finishes.
+#
+# `_run_tracked_task` is the single place that logs start/success/failure
+# and updates the history row, so every wrapper below is a one-liner instead
+# of repeating try/except/logging/history-update six times.
+
+def _finish_history(history_id: int, results: Optional[dict] = None, error: Optional[Exception] = None) -> None:
+    """
+    Write the outcome of a background task run back to its history row.
+
+    Args:
+        history_id (int): PK of the ScheduledTaskHistory row to update.
+        results (dict | None): Task result payload on success.
+        error (Exception | None): The exception raised, if the task failed.
+    """
+    try:
+        history = ScheduledTaskHistory.objects.get(pk=history_id)
+    except ScheduledTaskHistory.DoesNotExist:
+        logger.warning("[task] history #%s not found, cannot record outcome", history_id)
+        return
+
+    history.ended_at = timezone.now()
+    if error is not None:
+        history.status = 'failed'
+        history.result = str(error)
+    else:
+        history.status = 'completed'
+        history.result = json.dumps(results, indent=2, default=str)
+    history.save(update_fields=['status', 'result', 'ended_at'])
+
+
+def _run_tracked_task(history_id: int, task_label: str, func, *args, **kwargs) -> None:
+    """
+    Run a service function as a tracked Django-Q2 background task.
+
+    Logs when the task starts, and whether it completed or failed (with the
+    result summary or the exception), then updates the corresponding
+    ScheduledTaskHistory row. Never lets an exception propagate out — a
+    failure is recorded on the history row rather than crashing the worker.
+
+    Args:
+        history_id (int): PK of the ScheduledTaskHistory row tracking this run.
+        task_label (str): Human-readable task name, for the log lines.
+        func (Callable): The service function to execute (e.g. scan_channel_videos).
+        *args, **kwargs: Forwarded to `func`.
+    """
+    logger.info("[task] %s started (history #%s)", task_label, history_id)
+    try:
+        results = func(*args, **kwargs)
+    except Exception as exc:  # noqa: BLE001 - must not crash the worker
+        logger.error("[task] %s FAILED (history #%s): %s", task_label, history_id, exc, exc_info=True)
+        _finish_history(history_id, error=exc)
+        return
+    logger.info("[task] %s completed (history #%s): %s", task_label, history_id, results)
+    _finish_history(history_id, results=results)
+
+
+def run_update_channels(history_id: int) -> None:
+    _run_tracked_task(history_id, "Update Channels Metadata", update_channels_metadata)
+
+
+def run_scan_videos(history_id: int, channel_ids: Optional[List[int]] = None) -> None:
+    _run_tracked_task(history_id, "Scan Channel Videos", scan_channel_videos, channel_ids=channel_ids)
+
+
+def run_scan_channel_tabs(history_id: int, channel_ids: Optional[List[int]] = None) -> None:
+    _run_tracked_task(history_id, "Scan Channel Tabs", sync_channel_tabs, channel_ids=channel_ids)
+
+
+def run_update_videos_metadata(history_id: int) -> None:
+    _run_tracked_task(history_id, "Update Videos Metadata", update_videos_metadata)
+
+
+def run_update_music_tracks(history_id: int) -> None:
+    _run_tracked_task(history_id, "Update Music Tracks Metadata", update_music_tracks_metadata)
+
+
+def run_all_tasks(history_id: int) -> None:
+    _run_tracked_task(history_id, "All Tasks", run_scheduled_task)
 
 
 def metadata_from_info(data: dict) -> Dict[str, Optional[str]]:
