@@ -1,5 +1,7 @@
 from urllib.parse import urlencode, urlparse, urljoin
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util import Retry
 
 from django.http import HttpResponse, HttpResponseForbidden
 from django.http import StreamingHttpResponse
@@ -13,6 +15,10 @@ from tubetto.services import (
 )
 from .models import Tab, Video, Channel
 
+STREAM_SESSION = requests.Session()
+adapter = HTTPAdapter(pool_connections=20, pool_maxsize=50, max_retries=Retry(total=2, backoff_factor=0.2))
+STREAM_SESSION.mount('http://', adapter)
+STREAM_SESSION.mount('https://', adapter)
 
 # Allowed domains for proxy requests to prevent SSRF
 ALLOWED_PROXY_DOMAINS = {
@@ -25,21 +31,16 @@ ALLOWED_PROXY_DOMAINS = {
 
 
 def _is_url_allowed(url: str) -> bool:
-    """
-    Validate that a URL belongs to an allowed domain to prevent SSRF attacks.
-
-    Args:
-        url (str): URL to validate.
-
-    Returns:
-        bool: True if URL is from an allowed domain, False otherwise.
-    """
     try:
         parsed = urlparse(url)
-        domain = parsed.netloc.lower()
-        # Check if domain or any parent domain is in allowed list
+        if parsed.scheme not in ('http', 'https'):
+            return False
+        hostname = parsed.hostname
+        if not hostname:
+            return False
+        hostname = hostname.lower()
         return any(
-            domain == allowed or domain.endswith('.' + allowed)
+            hostname == allowed or hostname.endswith('.' + allowed)
             for allowed in ALLOWED_PROXY_DOMAINS
         )
     except Exception:
@@ -90,9 +91,9 @@ def progressive_file(request, video_id):
     headers = {}
     if 'Range' in request.headers:
         headers['Range'] = request.headers['Range']
-    upstream = requests.get(file_url, headers=headers, stream=True, timeout=8)
+    upstream = STREAM_SESSION.get(file_url, headers=headers, stream=True, timeout=8)
     content_type = upstream.headers.get('Content-Type', 'video/mp4')
-    resp = StreamingHttpResponse(upstream.iter_content(chunk_size=64 * 1024),
+    resp = StreamingHttpResponse(upstream.iter_content(chunk_size=256 * 1024),
                                  status=upstream.status_code,
                                  content_type=content_type)
     for h in ['Content-Length', 'Content-Range', 'Accept-Ranges', 'Cache-Control']:
@@ -108,7 +109,7 @@ def video_list(request, channel_id=None):
     tabs_grouped = []
     selected_tab = None
 
-    videos = Video.objects.all().order_by('title')
+    videos = Video.objects.select_related('channel').all().order_by('title')
 
     if channel_id:
         channel = get_object_or_404(Channel, yt_channel_id=channel_id)
@@ -206,7 +207,7 @@ def channel_detail(request, channel_id):
         or Http404 if the channel does not exist.
     """
     channel = get_object_or_404(Channel, yt_channel_id=channel_id)
-    videos = Video.objects.filter(channel=channel).order_by('-upload_date', '-created_at')
+    videos = Video.objects.select_related('channel').filter(channel=channel).order_by('-upload_date', '-created_at')
 
     # Search by title
     search_query = request.GET.get('search', '')
@@ -251,7 +252,7 @@ def video_detail(request, video_id):
         HttpResponse: Rendered template with video metadata and stream info,
         or HttpResponseForbidden when the video is not allowed.
     """
-    video = Video.objects.filter(yt_video_id=video_id).first()
+    video = Video.objects.select_related('channel').filter(yt_video_id=video_id).first()
     if not video or not _is_video_allowed(video):
         return HttpResponseForbidden("Video non autorizzato")
     info = resolve_video_info(video_id)
@@ -273,19 +274,6 @@ def video_detail(request, video_id):
 @login_required
 @ratelimit(key='user', rate='500/h')
 def hls_segment(request, video_id):
-    """
-    Proxy an individual HLS media segment to the client.
-
-    The upstream segment URL is provided via the 'u' query parameter. Range
-    requests are forwarded to the upstream server.
-
-    Args:
-        request (HttpRequest): Incoming request containing query parameter 'u'.
-        video_id (str): YouTube video identifier (yt_video_id).
-
-    Returns:
-        StreamingHttpResponse: Proxied segment content or HttpResponseForbidden on error.
-    """
     v = Video.objects.filter(yt_video_id=video_id).first()
     if not v or not _is_video_allowed(v):
         return HttpResponseForbidden("Not allowed")
@@ -297,8 +285,8 @@ def hls_segment(request, video_id):
     headers = {}
     if 'Range' in request.headers:
         headers['Range'] = request.headers['Range']
-    upstream = requests.get(segment_url, headers=headers, stream=True, timeout=8)
-    resp = StreamingHttpResponse(upstream.iter_content(chunk_size=64 * 1024),
+    upstream = STREAM_SESSION.get(segment_url, headers=headers, stream=True, timeout=8)
+    resp = StreamingHttpResponse(upstream.iter_content(chunk_size=256 * 1024),
                                  status=upstream.status_code,
                                  content_type=upstream.headers.get('Content-Type', 'video/MP2T'))
     for h in ['Content-Length', 'Content-Range', 'Accept-Ranges', 'Cache-Control']:
@@ -309,32 +297,19 @@ def hls_segment(request, video_id):
 
 @login_required
 def hls_manifest(_request, video_id):
-    """
-    Fetch, optionally resolve, and rewrite an HLS manifest so segments and keys
-    are proxied through this application.
-
-    - If a master playlist is returned, the first variant is fetched and used.
-    - All segment URLs are rewritten to point at the hls_segment endpoint.
-    - #EXT-X-KEY URIs are rewritten to point at the hls_key endpoint.
-
-    Args:
-        _request (HttpRequest): Incoming request (unused).
-        video_id (str): YouTube video identifier (yt_video_id).
-
-    Returns:
-        HttpResponse: The rewritten manifest with content_type 'application/vnd.apple.mpegurl',
-        or HttpResponseForbidden if the video is not allowed or not HLS.
-    """
     v = Video.objects.filter(yt_video_id=video_id).first()
     if not v or not _is_video_allowed(v):
         return HttpResponseForbidden("Not allowed")
     info = resolve_stream_manifest(video_id)
     if info.get("stream_type") != "hls":
         return HttpResponseForbidden("HLS required")
-    r = requests.get(info["manifest_url"], timeout=8)
+    manifest_url = info.get("manifest_url")
+    if not manifest_url or not _is_url_allowed(manifest_url):
+        return HttpResponseForbidden("Invalid manifest URL")
+    r = STREAM_SESSION.get(manifest_url, timeout=8)
     r.raise_for_status()
     text = r.text
-    base = info["manifest_url"].rsplit("/", 1)[0] + "/"
+    base = manifest_url.rsplit("/", 1)[0] + "/"
 
     # If master playlist, pick the first variant and fetch it
     if "#EXT-X-STREAM-INF" in text:
@@ -350,8 +325,8 @@ def hls_manifest(_request, video_id):
                     break
                 if variant_url:
                     break
-        if variant_url:
-            rv = requests.get(variant_url, timeout=8)
+        if variant_url and _is_url_allowed(variant_url):
+            rv = STREAM_SESSION.get(variant_url, timeout=8)
             rv.raise_for_status()
             text = rv.text
             base = variant_url.rsplit('/', 1)[0] + '/'
@@ -390,19 +365,6 @@ def hls_manifest(_request, video_id):
 @login_required
 @ratelimit(key='user', rate='500/h')
 def hls_key(request, video_id):
-    """
-    Proxy an HLS encryption key to the client.
-
-    The upstream key URL is supplied via the 'u' query parameter. The view
-    streams the key bytes and preserves Content-Length where provided.
-
-    Args:
-        request (HttpRequest): Incoming request containing query parameter 'u'.
-        video_id (str): YouTube video identifier (yt_video_id).
-
-    Returns:
-        StreamingHttpResponse: Proxied key bytes or HttpResponseForbidden on error.
-    """
     v = Video.objects.filter(yt_video_id=video_id).first()
     if not v or not _is_video_allowed(v):
         return HttpResponseForbidden("Not allowed")
@@ -411,8 +373,8 @@ def hls_key(request, video_id):
         return HttpResponseForbidden("Missing key URL")
     if not _is_url_allowed(key_url):
         return HttpResponseForbidden("URL not allowed")
-    upstream = requests.get(key_url, stream=True, timeout=8)
-    resp = StreamingHttpResponse(upstream.iter_content(chunk_size=32 * 1024),
+    upstream = STREAM_SESSION.get(key_url, stream=True, timeout=8)
+    resp = StreamingHttpResponse(upstream.iter_content(chunk_size=64 * 1024),
                                  status=upstream.status_code,
                                  content_type=upstream.headers.get('Content-Type', 'application/octet-stream'))
     for h in ['Content-Length', 'Cache-Control']:

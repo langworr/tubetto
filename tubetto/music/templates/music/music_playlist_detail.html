@@ -17,14 +17,17 @@
   <div class="mb-4">
     <p><strong>Total tracks:</strong> {{ entries|length }}</p>
 
-    <p class="mt-2">
-      <a href="{{ playlist_stream_url }}?format=m3u" class="me-2">Download M3U</a>
-      <a href="{% url 'publish_playlist' playlist.id %}" class="me-2">Publish</a>
+    <div class="mt-2 d-flex align-items-center gap-2">
+      <a href="{{ playlist_stream_url }}?format=m3u" class="btn btn-sm btn-outline-secondary">Download M3U</a>
+      <form method="post" action="{% url 'publish_playlist' playlist.id %}" class="d-inline">
+        {% csrf_token %}
+        <button type="submit" class="btn btn-sm btn-outline-primary">Publish</button>
+      </form>
 
       {% if playlist.published_m3u_path %}
-        <a href="/media/{{ playlist.published_m3u_path }}" target="_blank">View Published M3U</a>
+        <a href="/media/{{ playlist.published_m3u_path }}" target="_blank" class="btn btn-sm btn-outline-success">View Published M3U</a>
       {% endif %}
-    </p>
+    </div>
   </div>
 
   <div class="table-responsive">

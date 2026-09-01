@@ -16,20 +16,17 @@ from videos.models import Channel, Video, ChannelVideo, Tab
 from tubetto.constants import YT_USER_AGENT
 from tubetto.enums import YouTubeTab
 
+from django.core.cache import cache
+
 logger = logging.getLogger(__name__)
 
-_CACHE = {}  # {video_id: (expires_epoch, data)}
+
+def _cache_get(key: str) -> Optional[Any]:
+    return cache.get(key)
 
 
-def _cache_get(video_id: str) -> Optional[dict]:
-    item = _CACHE.get(video_id)
-    if item and item[0] > time.time():
-        return item[1]
-    return None
-
-
-def _cache_set(video_id: str, data: dict, ttl: int = 90) -> None:
-    _CACHE[video_id] = (time.time() + ttl, data)
+def _cache_set(key: str, data: Any, ttl: int = 90) -> None:
+    cache.set(key, data, timeout=ttl)
 
 
 def resolve_video_info(video_id: str) -> dict:
@@ -396,8 +393,14 @@ def resolve_channel_metadata(
     else:
         url = f"https://www.youtube.com/channel/{channel_id}"
 
-    cookies_path = settings.MEDIA_ROOT / cookies_file
-    regex_path = settings.MEDIA_ROOT / regex_file
+    data_dir = getattr(settings, 'DATA_DIR', settings.MEDIA_ROOT)
+    cookies_path = data_dir / cookies_file
+    if not cookies_path.exists():
+        cookies_path = settings.MEDIA_ROOT / cookies_file
+
+    regex_path = data_dir / regex_file
+    if not regex_path.exists():
+        regex_path = settings.MEDIA_ROOT / regex_file
 
     if not cookies_path.exists():
         return {}
@@ -499,8 +502,7 @@ def scan_channel_videos(channel_ids: Optional[List[int]] = None) -> Dict[str, an
         try:
             # Clear cache for this channel to ensure fresh data
             cache_key = f"chflat:{channel.yt_channel_id}:all"
-            if cache_key in _CACHE:
-                del _CACHE[cache_key]
+            cache.delete(cache_key)
 
             # Fetch all videos from the channel (no limit)
             vids = list_channel_videos_flat(channel.yt_channel_id, limit=None)

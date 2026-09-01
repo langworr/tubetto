@@ -5,12 +5,15 @@ Provides Django views for managing and streaming music tracks and playlists.
 Includes playlist publishing to M3U format and admin task scheduling.
 """
 from pathlib import Path
-
+from urllib.parse import urlparse
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util import Retry
 
-from django.http import HttpResponseRedirect
+from django.http import HttpResponseRedirect, HttpResponseForbidden
 from django.http import StreamingHttpResponse
 from django.contrib.auth.decorators import login_required
+from django.views.decorators.http import require_POST
 from django.core.paginator import Paginator
 from django.db.models import Count, Prefetch
 from django.conf import settings
@@ -18,26 +21,44 @@ from django.urls import reverse
 from django.shortcuts import render, get_object_or_404
 from django_ratelimit.decorators import ratelimit
 
-from tubetto.services import (
-    resolve_audio_stream
-)
-from tubetto.utils import reconstruct_segment_url
-
+from tubetto.services import resolve_audio_stream
 from .models import MusicTrack, MusicPlaylist, MusicPlaylistTrack
+
+STREAM_SESSION = requests.Session()
+adapter = HTTPAdapter(pool_connections=20, pool_maxsize=50, max_retries=Retry(total=2, backoff_factor=0.2))
+STREAM_SESSION.mount('http://', adapter)
+STREAM_SESSION.mount('https://', adapter)
+
+ALLOWED_PROXY_DOMAINS = {
+    'googlevideo.com',
+    'googleusercontent.com',
+    'ytimg.com',
+    'youtube.com',
+    'youtu.be',
+}
+
+
+def _is_url_allowed(url: str) -> bool:
+    try:
+        parsed = urlparse(url)
+        if parsed.scheme not in ('http', 'https'):
+            return False
+        hostname = parsed.hostname
+        if not hostname:
+            return False
+        hostname = hostname.lower()
+        return any(
+            hostname == allowed or hostname.endswith('.' + allowed)
+            for allowed in ALLOWED_PROXY_DOMAINS
+        )
+    except Exception:
+        return False
 
 
 @login_required
 def music_list(request):
-    """Display all music tracks sorted by title and artist with pagination.
-
-    Args:
-        request: HTTP request object (login required).
-
-    Returns:
-        Rendered template with paginated list of music tracks.
-    """
     tracks = MusicTrack.objects.all().order_by('title', 'artist')
-    paginator = Paginator(tracks, 50)  # Show 50 tracks per page
+    paginator = Paginator(tracks, 50)
     page_number = request.GET.get('page')
     page_obj = paginator.get_page(page_number)
     return render(
@@ -51,18 +72,6 @@ def music_list(request):
 
 @login_required
 def music_detail(_request, track_id):
-    """Display details for a single music track.
-
-    Args:
-        _request: HTTP request object (login required).
-        track_id: Primary key of the MusicTrack.
-
-    Returns:
-        Rendered template with track details and streaming URL.
-
-    Raises:
-        Http404: If track not found.
-    """
     track = get_object_or_404(MusicTrack, pk=track_id)
     stream_url = reverse("music_stream", args=[track.id])
     content_type = "audio/mpeg"
@@ -81,27 +90,14 @@ def music_detail(_request, track_id):
 @login_required
 @ratelimit(key='user', rate='200/h')
 def music_stream(_request, track_id):
-    """Stream audio content for a music track.
-
-    Resolves a fresh audio-only stream via yt-dlp and proxies it to the client.
-    Forwards relevant headers for content negotiation and range requests.
-
-    Args:
-        _request: HTTP request object (login required).
-        track_id: Primary key of the MusicTrack.
-
-    Returns:
-        StreamingHttpResponse with audio content.
-
-    Raises:
-        Http404: If track not found.
-    """
     track = get_object_or_404(MusicTrack, pk=track_id)
-    # Resolve fresh audio-only stream via yt-dlp and proxy it
     audio = resolve_audio_stream(track.yt_video_id)
-    upstream = requests.get(audio["stream_url"], stream=True, timeout=8)
+    stream_url = audio.get("stream_url")
+    if not stream_url or not _is_url_allowed(stream_url):
+        return HttpResponseForbidden("Stream URL not allowed")
+    upstream = STREAM_SESSION.get(stream_url, stream=True, timeout=8)
     resp = StreamingHttpResponse(
-        upstream.iter_content(chunk_size=64 * 1024),
+        upstream.iter_content(chunk_size=256 * 1024),
         content_type=upstream.headers.get("Content-Type", "audio/mpeg"),
     )
     for header in ["Content-Length", "Content-Range", "Accept-Ranges", "Cache-Control"]:
@@ -169,6 +165,7 @@ def music_playlist_detail(_request, playlist_id):
 
 
 @login_required
+@require_POST
 def publish_playlist(request, playlist_id):
     """Publish a single playlist by writing its M3U file to disk.
 

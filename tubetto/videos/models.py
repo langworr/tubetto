@@ -50,6 +50,13 @@ class Video(models.Model):
             return f"{hours:d}:{minutes:02d}:{seconds:02d}"
         return f"{minutes:d}:{seconds:02d}"
 
+    class Meta:
+        indexes = [
+            models.Index(fields=['title']),
+            models.Index(fields=['-upload_date', '-created_at']),
+            models.Index(fields=['channel', '-upload_date']),
+        ]
+
 
 class Tab(models.Model):
     GROUPED_TYPES = (YouTubeTab.PLAYLISTS, YouTubeTab.PODCASTS)

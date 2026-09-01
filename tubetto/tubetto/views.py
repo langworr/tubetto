@@ -1,8 +1,8 @@
 import json
 
+from django.core.exceptions import PermissionDenied
 from django.shortcuts import render
-from django.views.generic import TemplateView
-from django.contrib.auth.decorators import login_required, user_passes_test
+from django.contrib.auth.decorators import login_required
 from django.utils import timezone
 
 from tubetto.services import (
@@ -17,27 +17,10 @@ def _is_admin(user):
     return user.is_authenticated and (user.is_superuser or user.groups.filter(name__in=["admin"]).exists())
 
 
-def home(request):
-    context = {
-        'app_name': 'Tubetto',
-        'app_description': 'Your personal audio streaming platform powered by YouTube',
-    }
-    return render(request, 'home.html', context)
-
-
-class HomeView(TemplateView):
-    template_name = 'home.html'
-
-    def get_context_data(self, **kwargs):
-        context = super().get_context_data(**kwargs)
-        context['app_name'] = 'Tubetto'
-        context['app_description'] = 'Your personal audio streaming platform powered by YouTube'
-        return context
-
-
 @login_required
-@user_passes_test(_is_admin)
 def scheduled_task(request):
+    if not _is_admin(request.user):
+        raise PermissionDenied("Admin privileges required.")
     results = None
     results_text = None
     task_name = None

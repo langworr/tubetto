@@ -28,6 +28,10 @@ class ScheduledTaskHistory(models.Model):
 
     class Meta:
         ordering = ("-started_at",)
+        indexes = [
+            models.Index(fields=['-started_at']),
+            models.Index(fields=['status', 'ended_at']),
+        ]
 
     def __str__(self):
         return f"{self.get_task_type_display()} started at {self.started_at:%Y-%m-%d %H:%M:%S}"
