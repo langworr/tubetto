@@ -48,9 +48,28 @@
 
   {% elif stream.stream_type == "progressive" %}
     <video class="w-100" controls>
-      <source src="{% url 'progressive_file' video.yt_video_id %}" type="video/mp4">
+      <source src="{% url 'progressive_file' video.yt_video_id %}" type="{% if stream.ext == 'webm' %}video/webm{% else %}video/mp4{% endif %}">
       Your browser does not support the video tag.
     </video>
+
+  {% elif stream.stream_type == "dash" %}
+    <video id="video-player" class="w-100" controls playsinline></video>
+    <script src="https://cdn.jsdelivr.net/npm/dashjs@4.7.4/dist/dash.all.min.js"></script>
+    <script>
+      document.addEventListener('DOMContentLoaded', function () {
+        const videoEl = document.getElementById('video-player');
+        const manifestUrl = "{% url 'dash_manifest' video.yt_video_id %}";
+        if (window.dashjs && window.dashjs.MediaPlayer) {
+          const player = window.dashjs.MediaPlayer().create();
+          player.initialize(videoEl, manifestUrl, true);
+        } else {
+          videoEl.outerHTML = '<p>DASH playback is not supported in this browser.</p>';
+        }
+      });
+    </script>
+
+  {% elif stream.stream_type == "error" %}
+    <p>Unable to play this video: {{ stream.error }}</p>
 
   {% else %}
     <p>Stream type not supported: {{ stream.stream_type }}</p>

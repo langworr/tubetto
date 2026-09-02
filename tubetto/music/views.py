@@ -21,13 +21,18 @@ from django.urls import reverse
 from django.shortcuts import render, get_object_or_404
 from django_ratelimit.decorators import ratelimit
 
-from tubetto.services import resolve_audio_stream
+from tubetto.services import (
+    resolve_audio_stream,
+    YOUTUBE_HTTP_HEADERS,
+    youtube_request_cookies,
+)
 from .models import MusicTrack, MusicPlaylist, MusicPlaylistTrack
 
 STREAM_SESSION = requests.Session()
 adapter = HTTPAdapter(pool_connections=20, pool_maxsize=50, max_retries=Retry(total=2, backoff_factor=0.2))
 STREAM_SESSION.mount('http://', adapter)
 STREAM_SESSION.mount('https://', adapter)
+STREAM_SESSION.headers.update(YOUTUBE_HTTP_HEADERS)
 
 ALLOWED_PROXY_DOMAINS = {
     'googlevideo.com',
@@ -95,7 +100,15 @@ def music_stream(_request, track_id):
     stream_url = audio.get("stream_url")
     if not stream_url or not _is_url_allowed(stream_url):
         return HttpResponseForbidden("Stream URL not allowed")
-    upstream = STREAM_SESSION.get(stream_url, stream=True, timeout=8)
+    headers = dict(YOUTUBE_HTTP_HEADERS)
+    headers.update(audio.get("http_headers") or {})
+    upstream = STREAM_SESSION.get(
+        stream_url,
+        headers=headers,
+        cookies=youtube_request_cookies(),
+        stream=True,
+        timeout=30,
+    )
     resp = StreamingHttpResponse(
         upstream.iter_content(chunk_size=256 * 1024),
         content_type=upstream.headers.get("Content-Type", "audio/mpeg"),

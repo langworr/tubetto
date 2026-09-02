@@ -1,4 +1,5 @@
 from urllib.parse import urlencode, urlparse, urljoin
+from xml.sax.saxutils import escape as xml_escape
 import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util import Retry
@@ -12,6 +13,7 @@ from django.urls import reverse
 from django_ratelimit.decorators import ratelimit
 from tubetto.services import (
     resolve_stream_manifest, resolve_video_info, metadata_from_info,
+    YOUTUBE_HTTP_HEADERS, youtube_request_cookies,
 )
 from .models import Tab, Video, Channel
 
@@ -19,6 +21,7 @@ STREAM_SESSION = requests.Session()
 adapter = HTTPAdapter(pool_connections=20, pool_maxsize=50, max_retries=Retry(total=2, backoff_factor=0.2))
 STREAM_SESSION.mount('http://', adapter)
 STREAM_SESSION.mount('https://', adapter)
+STREAM_SESSION.headers.update(YOUTUBE_HTTP_HEADERS)
 
 # Allowed domains for proxy requests to prevent SSRF
 ALLOWED_PROXY_DOMAINS = {
@@ -45,6 +48,23 @@ def _is_url_allowed(url: str) -> bool:
         )
     except Exception:
         return False
+
+
+def _proxy_upstream(url: str, extra_headers: dict | None = None, range_header: str | None = None):
+    headers = dict(YOUTUBE_HTTP_HEADERS)
+    if extra_headers:
+        headers.update(extra_headers)
+    headers.pop("Accept-Encoding", None)
+    headers.pop("accept-encoding", None)
+    if range_header:
+        headers["Range"] = range_header
+    return STREAM_SESSION.get(
+        url,
+        headers=headers,
+        cookies=youtube_request_cookies(),
+        stream=True,
+        timeout=30,
+    )
 
 
 def _is_video_allowed(_video: Video) -> bool:
@@ -88,10 +108,13 @@ def progressive_file(request, video_id):
     if info.get("stream_type") != "progressive":
         return HttpResponseForbidden("Not a progressive stream")
     file_url = info.get("stream_url")
-    headers = {}
-    if 'Range' in request.headers:
-        headers['Range'] = request.headers['Range']
-    upstream = STREAM_SESSION.get(file_url, headers=headers, stream=True, timeout=8)
+    if not file_url or not _is_url_allowed(file_url):
+        return HttpResponseForbidden("Invalid stream URL")
+    upstream = _proxy_upstream(
+        file_url,
+        extra_headers=info.get("http_headers"),
+        range_header=request.headers.get("Range"),
+    )
     content_type = upstream.headers.get('Content-Type', 'video/mp4')
     resp = StreamingHttpResponse(upstream.iter_content(chunk_size=256 * 1024),
                                  status=upstream.status_code,
@@ -264,7 +287,10 @@ def video_detail(request, video_id):
             changed = True
     if changed:
         video.save()
-    stream = resolve_stream_manifest(video_id)
+    try:
+        stream = resolve_stream_manifest(video_id)
+    except RuntimeError as exc:
+        stream = {"stream_type": "error", "error": str(exc)}
     return render(request, "videos/video_detail.html", {
         "video": video,
         "stream": stream,
@@ -282,13 +308,15 @@ def hls_segment(request, video_id):
         return HttpResponseForbidden("Missing segment URL")
     if not _is_url_allowed(segment_url):
         return HttpResponseForbidden("URL not allowed")
-    headers = {}
-    if 'Range' in request.headers:
-        headers['Range'] = request.headers['Range']
-    upstream = STREAM_SESSION.get(segment_url, headers=headers, stream=True, timeout=8)
+    info = resolve_stream_manifest(video_id)
+    upstream = _proxy_upstream(
+        segment_url,
+        extra_headers=info.get("http_headers"),
+        range_header=request.headers.get("Range"),
+    )
     resp = StreamingHttpResponse(upstream.iter_content(chunk_size=256 * 1024),
                                  status=upstream.status_code,
-                                 content_type=upstream.headers.get('Content-Type', 'video/MP2T'))
+                                 content_type=upstream.headers.get('Content-Type', 'application/octet-stream'))
     for h in ['Content-Length', 'Content-Range', 'Accept-Ranges', 'Cache-Control']:
         if h in upstream.headers:
             resp[h] = upstream.headers[h]
@@ -306,7 +334,7 @@ def hls_manifest(_request, video_id):
     manifest_url = info.get("manifest_url")
     if not manifest_url or not _is_url_allowed(manifest_url):
         return HttpResponseForbidden("Invalid manifest URL")
-    r = STREAM_SESSION.get(manifest_url, timeout=8)
+    r = _proxy_upstream(manifest_url, extra_headers=info.get("http_headers"))
     r.raise_for_status()
     text = r.text
     base = manifest_url.rsplit("/", 1)[0] + "/"
@@ -326,7 +354,7 @@ def hls_manifest(_request, video_id):
                 if variant_url:
                     break
         if variant_url and _is_url_allowed(variant_url):
-            rv = STREAM_SESSION.get(variant_url, timeout=8)
+            rv = _proxy_upstream(variant_url, extra_headers=info.get("http_headers"))
             rv.raise_for_status()
             text = rv.text
             base = variant_url.rsplit('/', 1)[0] + '/'
@@ -373,7 +401,8 @@ def hls_key(request, video_id):
         return HttpResponseForbidden("Missing key URL")
     if not _is_url_allowed(key_url):
         return HttpResponseForbidden("URL not allowed")
-    upstream = STREAM_SESSION.get(key_url, stream=True, timeout=8)
+    info = resolve_stream_manifest(video_id)
+    upstream = _proxy_upstream(key_url, extra_headers=info.get("http_headers"))
     resp = StreamingHttpResponse(upstream.iter_content(chunk_size=64 * 1024),
                                  status=upstream.status_code,
                                  content_type=upstream.headers.get('Content-Type', 'application/octet-stream'))
@@ -381,3 +410,60 @@ def hls_key(request, video_id):
         if h in upstream.headers:
             resp[h] = upstream.headers[h]
     return resp
+
+
+def _dash_mime(kind: str, ext: str | None) -> str:
+    ext = (ext or "").lower()
+    if kind == "video":
+        return "video/mp4" if ext in ("mp4", "m4v") else "video/webm"
+    return "audio/mp4" if ext in ("m4a", "mp4") else "audio/webm"
+
+
+@login_required
+def dash_manifest(_request, video_id):
+    v = Video.objects.filter(yt_video_id=video_id).first()
+    if not v or not _is_video_allowed(v):
+        return HttpResponseForbidden("Not allowed")
+    info = resolve_stream_manifest(video_id)
+    if info.get("stream_type") != "dash":
+        return HttpResponseForbidden("DASH required")
+    video_url = info.get("video_url")
+    audio_url = info.get("audio_url")
+    if not video_url or not audio_url:
+        return HttpResponseForbidden("Adaptive stream URLs missing")
+    if not _is_url_allowed(video_url) or not _is_url_allowed(audio_url):
+        return HttpResponseForbidden("URL not allowed")
+
+    video_proxy = reverse("hls_segment", args=[video_id]) + "?" + urlencode({"u": video_url})
+    audio_proxy = reverse("hls_segment", args=[video_id]) + "?" + urlencode({"u": audio_url})
+    duration = float(info.get("duration") or 0)
+    width = int(info.get("width") or 0)
+    height = int(info.get("height") or 0)
+    size_attrs = f' width="{width}" height="{height}"' if width and height else ""
+    v_codec = xml_escape(str(info.get("video_codec") or "avc1.42c01e"))
+    a_codec = xml_escape(str(info.get("audio_codec") or "mp4a.40.2"))
+    v_bw = int(info.get("video_bitrate") or 1)
+    a_bw = int(info.get("audio_bitrate") or 1)
+
+    mpd = (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<MPD xmlns="urn:mpeg:dash:schema:mpd:2011" '
+        'profiles="urn:mpeg:dash:profile:isoff-on-demand:2011" type="static" '
+        f'mediaPresentationDuration="PT{duration:.3f}S" minBufferTime="PT1.5S">\n'
+        "  <Period>\n"
+        f'    <AdaptationSet contentType="video" mimeType="{_dash_mime("video", info.get("video_ext"))}" '
+        'subsegmentAlignment="true">\n'
+        f'      <Representation id="video" bandwidth="{v_bw}" codecs="{v_codec}"{size_attrs}>\n'
+        f"        <BaseURL>{xml_escape(video_proxy)}</BaseURL>\n"
+        "      </Representation>\n"
+        "    </AdaptationSet>\n"
+        f'    <AdaptationSet contentType="audio" mimeType="{_dash_mime("audio", info.get("audio_ext"))}" '
+        'subsegmentAlignment="true">\n'
+        f'      <Representation id="audio" bandwidth="{a_bw}" codecs="{a_codec}">\n'
+        f"        <BaseURL>{xml_escape(audio_proxy)}</BaseURL>\n"
+        "      </Representation>\n"
+        "    </AdaptationSet>\n"
+        "  </Period>\n"
+        "</MPD>\n"
+    )
+    return HttpResponse(mpd, content_type="application/dash+xml")

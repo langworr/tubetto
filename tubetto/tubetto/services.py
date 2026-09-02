@@ -1,8 +1,8 @@
 from http.cookiejar import LoadError, MozillaCookieJar
+from pathlib import Path
 import logging
 import re
 import json
-import time
 from datetime import datetime
 from typing import List, Dict, Optional, Any
 from django.conf import settings
@@ -20,6 +20,54 @@ from django.core.cache import cache
 
 logger = logging.getLogger(__name__)
 
+YOUTUBE_HTTP_HEADERS = {
+    "User-Agent": YT_USER_AGENT,
+    "Accept-Language": "it-IT,it;q=0.9,en-US;q=0.8,en;q=0.7",
+    "Accept": "*/*",
+    "Origin": "https://www.youtube.com",
+    "Referer": "https://www.youtube.com/",
+}
+
+
+def cookies_file_path(cookies_file: str = "cookies.txt") -> Optional[Path]:
+    data_dir = Path(getattr(settings, "DATA_DIR", settings.MEDIA_ROOT))
+    candidates = [data_dir / cookies_file, Path(settings.MEDIA_ROOT) / cookies_file]
+    for path in candidates:
+        if path.exists():
+            return path
+    return None
+
+
+def youtube_request_cookies():
+    path = cookies_file_path()
+    if not path:
+        return None
+    jar = MozillaCookieJar(str(path))
+    try:
+        jar.load(ignore_discard=True, ignore_expires=True)
+    except (OSError, LoadError) as e:
+        logger.error("Error loading cookies from %s: %s", path, e)
+        return None
+    return jar
+
+
+def ydl_base_opts() -> dict:
+    opts = {
+        "skip_download": True,
+        "no_warnings": True,
+        "quiet": True,
+        "http_headers": dict(YOUTUBE_HTTP_HEADERS),
+        "extractor_args": {
+            "youtube": {
+                "player_client": ["web", "ios", "android"],
+            }
+        },
+    }
+    cookies_path = cookies_file_path()
+    if cookies_path:
+        opts["cookiefile"] = str(cookies_path)
+    return opts
+
 
 def _cache_get(key: str) -> Optional[Any]:
     return cache.get(key)
@@ -30,15 +78,12 @@ def _cache_set(key: str, data: Any, ttl: int = 90) -> None:
 
 
 def resolve_video_info(video_id: str) -> dict:
-    cached = _cache_get(video_id)
+    cache_key = f"ytinfo:{video_id}"
+    cached = _cache_get(cache_key)
     if cached:
         return cached
-    ydl_opts = {
-        'format': 'bestvideo+bestaudio/best',
-        'skip_download': True,
-        'no_warnings': True,
-        'quiet': True,
-    }
+    ydl_opts = ydl_base_opts()
+    ydl_opts["format"] = "bestvideo*+bestaudio/best"
     url = f"https://www.youtube.com/watch?v={video_id}"
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -46,7 +91,7 @@ def resolve_video_info(video_id: str) -> dict:
     except DownloadError as e:
         raise RuntimeError(f"yt-dlp error: {e.args[0] if e.args else 'unknown error'}") from e
 
-    _cache_set(video_id, data)
+    _cache_set(cache_key, data)
     return data
 
 
@@ -65,7 +110,12 @@ def select_best_audio(formats: list[dict]) -> dict | None:
         return (is_m4a, f.get("tbr") or f.get("abr") or 0)
     audio_only = sorted(audio_only, key=score, reverse=True)
     best = audio_only[0]
-    return {"url": best.get("url"), "ext": best.get("ext"), "acodec": best.get("acodec")}
+    return {
+        "url": best.get("url"),
+        "ext": best.get("ext"),
+        "acodec": best.get("acodec"),
+        "http_headers": _http_headers_from_format(best),
+    }
 
 
 def resolve_audio_stream(video_id: str) -> dict:
@@ -81,6 +131,7 @@ def resolve_audio_stream(video_id: str) -> dict:
         "stream_url": audio.get("url"),
         "ext": audio.get("ext"),
         "acodec": audio.get("acodec"),
+        "http_headers": audio.get("http_headers") or dict(YOUTUBE_HTTP_HEADERS),
     }
 
 
@@ -129,37 +180,133 @@ def update_music_tracks_metadata() -> Dict[str, Any]:
     return results
 
 
+def _http_headers_from_format(fmt: dict | None) -> dict:
+    headers = dict(YOUTUBE_HTTP_HEADERS)
+    if not fmt:
+        return headers
+    extra = fmt.get("http_headers") or {}
+    headers.update(extra)
+    return headers
+
+
+def _is_http_format(fmt: dict) -> bool:
+    proto = (fmt.get("protocol") or "https").split("+", 1)[0]
+    return proto in ("http", "https") and bool(fmt.get("url"))
+
+
 def _select_progressive(formats: list[dict]) -> dict | None:
     progressive = []
     for f in formats:
+        if not _is_http_format(f):
+            continue
         if (f.get("vcodec") and f.get("vcodec") != "none") and (f.get("acodec") and f.get("acodec") != "none"):
-            if (f.get("protocol") in ("https", "http")) and f.get("url"):
+            if (f.get("ext") or "").lower() in ("mp4", "m4v", "webm"):
                 progressive.append(f)
     if not progressive:
         return None
-    # Prefer MP4, then highest bitrate
-    progressive = sorted(progressive, key=lambda f: (f.get("ext") == "mp4", f.get("tbr") or 0), reverse=True)
+    progressive = sorted(
+        progressive,
+        key=lambda f: ((f.get("ext") or "").lower() == "mp4", f.get("tbr") or 0),
+        reverse=True,
+    )
     chosen = progressive[0]
-    return {"type": "progressive", "url": chosen.get("url"), "ext": chosen.get("ext")}
+    return {
+        "type": "progressive",
+        "url": chosen.get("url"),
+        "ext": chosen.get("ext"),
+        "http_headers": _http_headers_from_format(chosen),
+    }
+
+
+def _is_hls_format(fmt: dict) -> bool:
+    proto = (fmt.get("protocol") or "")
+    ext = (fmt.get("ext") or "")
+    url = fmt.get("manifest_url") or fmt.get("url") or ""
+    return "m3u8" in proto or ext == "m3u8" or ".m3u8" in url
+
+
+def _select_hls(formats: list[dict]) -> dict | None:
+    hls = [f for f in formats if _is_hls_format(f) and (f.get("url") or f.get("manifest_url"))]
+    if not hls:
+        return None
+    chosen = sorted(hls, key=lambda f: f.get("tbr") or f.get("height") or 0, reverse=True)[0]
+    return {
+        "type": "hls",
+        "manifest_url": chosen.get("manifest_url") or chosen.get("url"),
+        "http_headers": _http_headers_from_format(chosen),
+    }
+
+
+def _select_adaptive_pair(formats: list[dict]) -> dict | None:
+    videos = []
+    audios = []
+    for f in formats:
+        if not _is_http_format(f):
+            continue
+        vcodec = f.get("vcodec")
+        acodec = f.get("acodec")
+        has_video = vcodec and vcodec != "none"
+        has_audio = acodec and acodec != "none"
+        if has_video and not has_audio:
+            videos.append(f)
+        elif has_audio and not has_video:
+            audios.append(f)
+    if not videos or not audios:
+        return None
+
+    def video_score(f: dict) -> tuple:
+        ext = (f.get("ext") or "").lower()
+        vcodec = (f.get("vcodec") or "").lower()
+        mp4_like = 1 if ext in ("mp4", "m4v") or vcodec.startswith("avc") else 0
+        return (mp4_like, f.get("height") or 0, f.get("tbr") or 0)
+
+    def audio_score(f: dict) -> tuple:
+        ext = (f.get("ext") or "").lower()
+        m4a_like = 1 if ext in ("m4a", "mp4") else 0
+        return (m4a_like, f.get("tbr") or f.get("abr") or 0)
+
+    video = sorted(videos, key=video_score, reverse=True)[0]
+    audio = sorted(audios, key=audio_score, reverse=True)[0]
+    return {
+        "type": "dash",
+        "video_url": video.get("url"),
+        "audio_url": audio.get("url"),
+        "video_ext": video.get("ext") or "mp4",
+        "audio_ext": audio.get("ext") or "m4a",
+        "video_codec": video.get("vcodec") or "avc1.42c01e",
+        "audio_codec": audio.get("acodec") or "mp4a.40.2",
+        "width": video.get("width") or 0,
+        "height": video.get("height") or 0,
+        "video_bitrate": int((video.get("tbr") or video.get("vbr") or 1) * 1000),
+        "audio_bitrate": int((audio.get("tbr") or audio.get("abr") or 1) * 1000),
+        "http_headers": _http_headers_from_format(video),
+    }
 
 
 def select_manifest(data: dict) -> dict:
-    formats = data.get("formats", [])
-    # 1) Prefer progressive (single-file) for simpler proxying/playback
+    formats = data.get("formats") or []
+    # HLS first: browser-playable via hls.js, typical YouTube live/vod client output
+    hls = _select_hls(formats)
+    if hls:
+        return hls
     prog = _select_progressive(formats)
     if prog:
         return prog
-    # 2) HLS (m3u8)
-    hls = [f for f in formats if f.get("protocol") == "m3u8" or "m3u8" in (f.get("url") or "")]
-    if hls:
-        chosen = sorted(hls, key=lambda f: f.get("tbr") or 0, reverse=True)[0]
-        return {"type": "hls", "manifest_url": chosen.get("url")}
-    # 3) DASH manifest
-    dash = [f for f in formats if f.get("manifest_url") or (f.get("url") or "").endswith(".mpd")]
+    adaptive = _select_adaptive_pair(formats)
+    if adaptive:
+        return adaptive
+    dash = [
+        f for f in formats
+        if f.get("manifest_url") or (f.get("url") or "").endswith(".mpd")
+    ]
     if dash:
         chosen = dash[0]
         mu = chosen.get("manifest_url") or chosen.get("url")
-        return {"type": "dash", "manifest_url": mu}
+        return {
+            "type": "dash",
+            "manifest_url": mu,
+            "http_headers": _http_headers_from_format(chosen),
+        }
     raise RuntimeError("Nessun manifest disponibile (progressive/HLS/DASH)")
 
 
@@ -179,16 +326,29 @@ def resolve_stream_manifest(video_id: str) -> dict:
             "stream_type": "progressive",
             "stream_url": sel.get("url"),
             "ext": sel.get("ext"),
+            "http_headers": sel.get("http_headers") or dict(YOUTUBE_HTTP_HEADERS),
         })
     elif sel["type"] == "hls":
         result.update({
             "stream_type": "hls",
             "manifest_url": sel.get("manifest_url"),
+            "http_headers": sel.get("http_headers") or dict(YOUTUBE_HTTP_HEADERS),
         })
     else:
         result.update({
             "stream_type": "dash",
             "manifest_url": sel.get("manifest_url"),
+            "video_url": sel.get("video_url"),
+            "audio_url": sel.get("audio_url"),
+            "video_ext": sel.get("video_ext"),
+            "audio_ext": sel.get("audio_ext"),
+            "video_codec": sel.get("video_codec"),
+            "audio_codec": sel.get("audio_codec"),
+            "width": sel.get("width"),
+            "height": sel.get("height"),
+            "video_bitrate": sel.get("video_bitrate"),
+            "audio_bitrate": sel.get("audio_bitrate"),
+            "http_headers": sel.get("http_headers") or dict(YOUTUBE_HTTP_HEADERS),
         })
     return result
 
@@ -204,12 +364,8 @@ def _channel_tab_url(channel_id: str, tab: str) -> str:
 
 
 def _extract_flat_entries(url: str, limit: Optional[int] = None) -> List[Dict]:
-    ydl_opts = {
-        "quiet": True,
-        "no_warnings": True,
-        "skip_download": True,
-        "extract_flat": True,
-    }
+    ydl_opts = ydl_base_opts()
+    ydl_opts["extract_flat"] = True
     if limit:
         ydl_opts["playlistend"] = limit
 
@@ -393,16 +549,14 @@ def resolve_channel_metadata(
     else:
         url = f"https://www.youtube.com/channel/{channel_id}"
 
-    data_dir = getattr(settings, 'DATA_DIR', settings.MEDIA_ROOT)
-    cookies_path = data_dir / cookies_file
-    if not cookies_path.exists():
-        cookies_path = settings.MEDIA_ROOT / cookies_file
+    cookies_path = cookies_file_path(cookies_file)
+    data_dir = Path(getattr(settings, "DATA_DIR", settings.MEDIA_ROOT))
 
     regex_path = data_dir / regex_file
     if not regex_path.exists():
         regex_path = settings.MEDIA_ROOT / regex_file
 
-    if not cookies_path.exists():
+    if not cookies_path:
         return {}
 
     reg_ex = {}

@@ -84,6 +84,26 @@ def save_netscape_cookie(cookies, filename="cookies.txt"):
             "value": fix_pref_value(""),
         })
 
+    names = {c.get("name") for c in cookies_to_save}
+    if "SOCS" not in names:
+        cookies_to_save.append({
+            "domain": ".youtube.com",
+            "path": "/",
+            "secure": True,
+            "expires": one_year_later,
+            "name": "SOCS",
+            "value": generate_dynamic_socs_cookie(),
+        })
+    if "CONSENT" not in names:
+        cookies_to_save.append({
+            "domain": ".youtube.com",
+            "path": "/",
+            "secure": True,
+            "expires": one_year_later,
+            "name": "CONSENT",
+            "value": "YES+cb",
+        })
+
     with open(filename, "w", encoding="utf-8") as f:
         f.write(NETSCAPE_HEADER)
         for c in cookies_to_save:

@@ -13,4 +13,5 @@ urlpatterns = [
     path('stream/<str:video_id>/seg', views.hls_segment, name='hls_segment'),
     path('stream/<str:video_id>/key', views.hls_key, name='hls_key'),
     path('stream/<str:video_id>/file', views.progressive_file, name='progressive_file'),
+    path('stream/<str:video_id>/manifest.mpd', views.dash_manifest, name='dash_manifest'),
 ]
