@@ -24,6 +24,8 @@ from . import views
 
 urlpatterns = [
     path('admin/', admin.site.urls),
+    path('login/', views.CustomLoginView.as_view(), name='login'),
+    path('logout/', views.logout_view, name='logout'),
     path('', TemplateView.as_view(template_name='home.html'), name='home'),
     path('video/', include('videos.urls')),
     path('music/', include('music.urls')),

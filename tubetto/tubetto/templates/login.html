@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+
+{% block title %}Login - Tubetto{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center mt-4 mb-4">
+  <div class="col-12 col-md-8 col-lg-5">
+    <div class="card shadow-sm border-0">
+      <div class="card-body p-4 p-md-5">
+        <div class="text-center mb-4">
+          <i class="bi bi-person-circle text-primary" style="font-size: 3rem;"></i>
+          <h2 class="h4 mt-2 fw-bold">Sign In</h2>
+          <p class="text-muted small">Access your Tubetto account</p>
+        </div>
+
+        {% if oidc_error %}
+          <div class="alert alert-warning alert-dismissible fade show d-flex align-items-center" role="alert">
+            <i class="bi bi-exclamation-triangle-fill flex-shrink-0 me-2"></i>
+            <div>
+              <strong>SSO Unavailable:</strong> The OIDC / Keycloak authentication service is unreachable or failed. You can sign in using your internal Django credentials below.
+            </div>
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+          </div>
+        {% endif %}
+
+        {% if form.errors %}
+          <div class="alert alert-danger alert-dismissible fade show" role="alert">
+            <i class="bi bi-x-circle-fill me-1"></i>
+            <strong>Login Failed:</strong> Please enter a correct username and password. Note that both fields may be case-sensitive.
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+          </div>
+        {% endif %}
+
+        <!-- Internal Django User Form -->
+        <form method="post" action="{% url 'login' %}">
+          {% csrf_token %}
+          {% if next %}
+            <input type="hidden" name="next" value="{{ next }}" />
+          {% endif %}
+
+          <div class="mb-3">
+            <label for="id_username" class="form-label fw-semibold">Username</label>
+            <div class="input-group">
+              <span class="input-group-text"><i class="bi bi-person"></i></span>
+              <input type="text" name="username" autofocus autocapitalize="none" autocomplete="username" maxlength="150" required id="id_username" class="form-control" placeholder="Enter username">
+            </div>
+          </div>
+
+          <div class="mb-3">
+            <label for="id_password" class="form-label fw-semibold">Password</label>
+            <div class="input-group">
+              <span class="input-group-text"><i class="bi bi-lock"></i></span>
+              <input type="password" name="password" autocomplete="current-password" required id="id_password" class="form-control" placeholder="Enter password">
+            </div>
+          </div>
+
+          <button type="submit" class="btn btn-primary w-100 py-2 fw-semibold mt-2">
+            <i class="bi bi-box-arrow-in-right me-1"></i> Log In
+          </button>
+        </form>
+
+        {% if oidc_enabled %}
+          <div class="position-relative my-4">
+            <hr>
+            <span class="position-absolute top-50 start-50 translate-middle bg-white px-3 text-muted small">OR</span>
+          </div>
+
+          <div class="d-grid">
+            <a href="{% url 'oidc_authentication_init' %}{% if next %}?next={{ next|urlencode }}{% endif %}" class="btn btn-outline-dark py-2">
+              <i class="bi bi-shield-lock me-1"></i> Sign in with SSO (Keycloak)
+            </a>
+          </div>
+        {% endif %}
+
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+

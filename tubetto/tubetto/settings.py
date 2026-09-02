@@ -115,22 +115,22 @@ AUTH_PASSWORD_VALIDATORS = [
 
 AUTHENTICATION_BACKENDS = [
     "django.contrib.auth.backends.ModelBackend",
-    "mozilla_django_oidc.auth.OIDCAuthenticationBackend",
     "tubetto.auth.KeycloakOIDCBackend",
 ]
 
-OIDC_RP_CLIENT_ID = os.environ.get('OIDC_RP_CLIENT_ID')
-OIDC_RP_CLIENT_SECRET = os.environ.get('OIDC_RP_CLIENT_SECRET')
-OIDC_OP_AUTHORIZATION_ENDPOINT = os.environ.get('OIDC_OP_AUTHORIZATION_ENDPOINT')
-OIDC_OP_DISCOVERY_ENDPOINT = os.environ.get('OIDC_OP_DISCOVERY_ENDPOINT')
-OIDC_OP_TOKEN_ENDPOINT = os.environ.get('OIDC_OP_TOKEN_ENDPOINT')
-OIDC_OP_USER_ENDPOINT = os.environ.get('OIDC_OP_USER_ENDPOINT')
-OIDC_OP_JWKS_ENDPOINT = os.environ.get('OIDC_OP_JWKS_ENDPOINT')
-OIDC_RP_SCOPES = os.environ.get('OIDC_RP_SCOPES')
-OIDC_RP_SIGN_ALGO = os.environ.get('OIDC_RP_SIGN_ALGO')
+OIDC_RP_CLIENT_ID = os.environ.get('OIDC_RP_CLIENT_ID', 'tubetto')
+OIDC_RP_CLIENT_SECRET = os.environ.get('OIDC_RP_CLIENT_SECRET', '')
+OIDC_OP_AUTHORIZATION_ENDPOINT = os.environ.get('OIDC_OP_AUTHORIZATION_ENDPOINT', '')
+OIDC_OP_DISCOVERY_ENDPOINT = os.environ.get('OIDC_OP_DISCOVERY_ENDPOINT', '')
+OIDC_OP_TOKEN_ENDPOINT = os.environ.get('OIDC_OP_TOKEN_ENDPOINT', 'https://localhost/token')
+OIDC_OP_USER_ENDPOINT = os.environ.get('OIDC_OP_USER_ENDPOINT', 'https://localhost/userinfo')
+OIDC_OP_JWKS_ENDPOINT = os.environ.get('OIDC_OP_JWKS_ENDPOINT', 'https://localhost/certs')
+OIDC_RP_SCOPES = os.environ.get('OIDC_RP_SCOPES', 'openid email profile')
+OIDC_RP_SIGN_ALGO = os.environ.get('OIDC_RP_SIGN_ALGO', 'RS256')
 
-LOGIN_URL = "/oidc/authenticate/"
+LOGIN_URL = "/login/"
 LOGIN_REDIRECT_URL = "/"
+LOGIN_REDIRECT_URL_FAILURE = "/login/?oidc_error=1"
 LOGOUT_REDIRECT_URL = "/"
 
 

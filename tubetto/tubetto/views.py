@@ -1,8 +1,11 @@
 import json
 
-from django.core.exceptions import PermissionDenied
-from django.shortcuts import render
+from django.conf import settings
+from django.contrib.auth import logout as auth_logout
 from django.contrib.auth.decorators import login_required
+from django.contrib.auth.views import LoginView
+from django.core.exceptions import PermissionDenied
+from django.shortcuts import redirect, render
 from django.utils import timezone
 
 from tubetto.services import (
@@ -160,3 +163,26 @@ def scheduled_task(request):
         "history_entries": history_entries,
         "running_tasks": running_tasks,
     })
+
+
+class CustomLoginView(LoginView):
+    """
+    Login view supporting both internal Django authentication and OIDC/Keycloak SSO fallback.
+    """
+    template_name = "login.html"
+    redirect_authenticated_user = True
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context["oidc_error"] = bool(self.request.GET.get("oidc_error"))
+        context["oidc_enabled"] = bool(getattr(settings, "OIDC_OP_AUTHORIZATION_ENDPOINT", None))
+        return context
+
+
+def logout_view(request):
+    """
+    Log out the user from the current session and redirect to LOGOUT_REDIRECT_URL.
+    """
+    auth_logout(request)
+    return redirect(getattr(settings, "LOGOUT_REDIRECT_URL", "/"))
+
