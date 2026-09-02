@@ -7,6 +7,7 @@ class ScheduledTaskHistory(models.Model):
     TASK_TYPE_CHOICES = [
         ("update_channels", "Update Channels Metadata"),
         ("scan_videos", "Scan Channel Videos"),
+        ("scan_channel_tabs", "Scan Channel Tabs"),
         ("update_videos_metadata", "Update Videos Metadata"),
         ("update_music_tracks", "Update Music Tracks Metadata"),
         ("run_all", "All Tasks"),
@@ -25,6 +26,7 @@ class ScheduledTaskHistory(models.Model):
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="running")
     result = models.TextField(blank=True)
     channels = models.JSONField(null=True, blank=True, default=list)
+    q_task_id = models.CharField(max_length=64, blank=True, default="", help_text="Django Q task ID")
 
     class Meta:
         ordering = ("-started_at",)

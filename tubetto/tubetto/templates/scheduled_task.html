@@ -2,153 +2,210 @@
 {% block title %}Scheduled Task - Tubetto{% endblock %}
 {% block content %}
 
-<h1 class="mb-3">Scheduled Tasks</h1>
-<p>Run individual tasks or all tasks at once.</p>
+{% if running_tasks.exists %}
+  <meta http-equiv="refresh" content="6">
+{% endif %}
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <div>
+    <h1 class="h2 mb-1">Scheduled Tasks</h1>
+    <p class="text-muted mb-0">Run background maintenance tasks asynchronously using Django Q.</p>
+  </div>
+  <div>
+    <a href="{% url 'scheduled_task' %}" class="btn btn-outline-secondary btn-sm">
+      <i class="bi bi-arrow-clockwise me-1"></i> Refresh
+    </a>
+  </div>
+</div>
 
 {% if running_tasks.exists %}
-  <div class="alert alert-info" role="alert">
-    There {% if running_tasks.count == 1 %}is{% else %}are{% endif %} currently {{ running_tasks.count }} running task{% if running_tasks.count != 1 %}s{% endif %}.
+  <div class="alert alert-info d-flex align-items-center" role="alert">
+    <div class="spinner-border spinner-border-sm text-info me-2" role="status"></div>
+    <div>
+      There {% if running_tasks.count == 1 %}is{% else %}are{% endif %} currently <strong>{{ running_tasks.count }}</strong> task{% if running_tasks.count != 1 %}s{% endif %} running in the background. This page will auto-refresh.
+    </div>
   </div>
 {% endif %}
 
-<div class="row g-3 mb-4">
-  <div class="col-12 col-lg-4">
-    <form method="post" class="d-grid gap-2">
-      {% csrf_token %}
-      <button type="submit" name="update_channels" class="btn btn-primary btn-sm">
-        1. Update Channels Metadata
-      </button>
-    </form>
-  </div>
-
-  <div class="col-12 col-lg-4">
-    <form method="post" class="d-grid gap-2">
-      {% csrf_token %}
-      <div class="btn-group">
-        <button type="submit" name="scan_videos" class="btn btn-success btn-sm">
-          2. Scan Channel Videos
-        </button>
-        <button type="button" class="btn btn-success btn-sm dropdown-toggle dropdown-toggle-split" data-bs-toggle="dropdown" aria-expanded="false">
-          <span class="visually-hidden">Toggle Dropdown</span>
-        </button>
-        <ul class="dropdown-menu p-3" data-bs-auto-close="outside" style="min-width: 220px;">
-          <li>
-            <div class="form-check">
-              <input class="form-check-input" type="checkbox" id="chk_all" name="scan_channels_selected" value="all">
-              <label class="form-check-label" for="chk_all">All Channels</label>
-            </div>
-          </li>
-          {% for channel in channels %}
-          <li>
-            <div class="form-check">
-              <input class="form-check-input" type="checkbox" id="chk_{{ channel.id }}" name="scan_channels_selected" value="{{ channel.id }}">
-              <label class="form-check-label" for="chk_{{ channel.id }}">{{ channel.title|default:channel.yt_channel_id }}</label>
-            </div>
-          </li>
-          {% endfor %}
-        </ul>
+<div class="card mb-4 shadow-sm border-0 bg-light">
+  <div class="card-body p-3">
+    <h5 class="card-title h6 text-uppercase text-secondary fw-bold mb-3">Trigger Background Tasks</h5>
+    <div class="row g-3">
+      <div class="col-12 col-md-6 col-lg-4">
+        <form method="post" class="d-grid">
+          {% csrf_token %}
+          <button type="submit" name="update_channels" class="btn btn-primary btn-sm text-start py-2">
+            <i class="bi bi-person-lines-fill me-1"></i> 1. Update Channels Metadata
+          </button>
+        </form>
       </div>
-    </form>
-  </div>
 
-  <div class="col-12 col-lg-4">
-    <form method="post" class="d-grid gap-2">
-      {% csrf_token %}
-      <div class="btn-group">
-        <button type="submit" name="scan_channel_tabs" class="btn text-white" style="background-color: #da22ff; border-color: #da22ff;">
-          3. Scan Channel Tabs
-        </button>
-        <button type="button" class="btn btn-success btn-sm dropdown-toggle dropdown-toggle-split" style="background-color: #da22ff; border-color: #da22ff;" data-bs-toggle="dropdown" aria-expanded="false">
-          <span class="visually-hidden">Toggle Dropdown</span>
-        </button>
-        <ul class="dropdown-menu p-3" data-bs-auto-close="outside" style="min-width: 220px;">
-          <li>
-            <div class="form-check">
-              <input class="form-check-input" type="checkbox" id="chk_all" name="scan_channels_selected" value="all">
-              <label class="form-check-label" for="chk_all">All Channels</label>
-            </div>
-          </li>
-          {% for channel in channels %}
-          <li>
-            <div class="form-check">
-              <input class="form-check-input" type="checkbox" id="chk_{{ channel.id }}" name="scan_channels_selected" value="{{ channel.id }}">
-              <label class="form-check-label" for="chk_{{ channel.id }}">{{ channel.title|default:channel.yt_channel_id }}</label>
-            </div>
-          </li>
-          {% endfor %}
-        </ul>
+      <div class="col-12 col-md-6 col-lg-4">
+        <form method="post" class="d-grid">
+          {% csrf_token %}
+          <div class="btn-group">
+            <button type="submit" name="scan_videos" class="btn btn-success btn-sm text-start py-2 flex-grow-1">
+              <i class="bi bi-camera-video me-1"></i> 2. Scan Channel Videos
+            </button>
+            <button type="button" class="btn btn-success btn-sm dropdown-toggle dropdown-toggle-split" data-bs-toggle="dropdown" aria-expanded="false">
+              <span class="visually-hidden">Toggle Dropdown</span>
+            </button>
+            <ul class="dropdown-menu p-3 shadow" data-bs-auto-close="outside" style="min-width: 250px; max-height: 300px; overflow-y: auto;">
+              <li>
+                <div class="form-check">
+                  <input class="form-check-input" type="checkbox" id="chk_all_vids" name="scan_channels_selected" value="all">
+                  <label class="form-check-label fw-bold" for="chk_all_vids">All Channels</label>
+                </div>
+              </li>
+              <li><hr class="dropdown-divider"></li>
+              {% for channel in channels %}
+              <li>
+                <div class="form-check">
+                  <input class="form-check-input" type="checkbox" id="chk_vid_{{ channel.id }}" name="scan_channels_selected" value="{{ channel.id }}">
+                  <label class="form-check-label text-truncate" for="chk_vid_{{ channel.id }}">{{ channel.title|default:channel.yt_channel_id }}</label>
+                </div>
+              </li>
+              {% endfor %}
+            </ul>
+          </div>
+        </form>
       </div>
-    </form>
-  </div>
 
-  <div class="col-12 col-lg-4">
-    <div class="d-grid gap-2">
-      <form method="post">
-        {% csrf_token %}
-        <button type="submit" name="update_videos_metadata" class="btn btn-purple btn-sm" style="background:#9b59b6;color:white;">
-          4. Update Videos Metadata
-        </button>
-      </form>
-      <form method="post">
-        {% csrf_token %}
-        <button type="submit" name="update_music_tracks" class="btn btn-warning btn-sm text-white">
-          5. Update Music Tracks Metadata
-        </button>
-      </form>
-      <form method="post">
-        {% csrf_token %}
-        <button type="submit" name="run_all" class="btn btn-dark btn-sm fw-bold">
-          Run All Tasks
-        </button>
-      </form>
+      <div class="col-12 col-md-6 col-lg-4">
+        <form method="post" class="d-grid">
+          {% csrf_token %}
+          <div class="btn-group">
+            <button type="submit" name="scan_channel_tabs" class="btn text-white btn-sm text-start py-2 flex-grow-1" style="background-color: #da22ff; border-color: #da22ff;">
+              <i class="bi bi-collection-play me-1"></i> 3. Scan Channel Tabs
+            </button>
+            <button type="button" class="btn btn-sm dropdown-toggle dropdown-toggle-split text-white" style="background-color: #da22ff; border-color: #da22ff;" data-bs-toggle="dropdown" aria-expanded="false">
+              <span class="visually-hidden">Toggle Dropdown</span>
+            </button>
+            <ul class="dropdown-menu p-3 shadow" data-bs-auto-close="outside" style="min-width: 250px; max-height: 300px; overflow-y: auto;">
+              <li>
+                <div class="form-check">
+                  <input class="form-check-input" type="checkbox" id="chk_all_tabs" name="scan_channels_selected" value="all">
+                  <label class="form-check-label fw-bold" for="chk_all_tabs">All Channels</label>
+                </div>
+              </li>
+              <li><hr class="dropdown-divider"></li>
+              {% for channel in channels %}
+              <li>
+                <div class="form-check">
+                  <input class="form-check-input" type="checkbox" id="chk_tab_{{ channel.id }}" name="scan_channels_selected" value="{{ channel.id }}">
+                  <label class="form-check-label text-truncate" for="chk_tab_{{ channel.id }}">{{ channel.title|default:channel.yt_channel_id }}</label>
+                </div>
+              </li>
+              {% endfor %}
+            </ul>
+          </div>
+        </form>
+      </div>
+
+      <div class="col-12 col-md-6 col-lg-4">
+        <form method="post" class="d-grid">
+          {% csrf_token %}
+          <button type="submit" name="update_videos_metadata" class="btn btn-sm text-white text-start py-2" style="background:#9b59b6;border-color:#9b59b6;">
+            <i class="bi bi-film me-1"></i> 4. Update Videos Metadata
+          </button>
+        </form>
+      </div>
+
+      <div class="col-12 col-md-6 col-lg-4">
+        <form method="post" class="d-grid">
+          {% csrf_token %}
+          <button type="submit" name="update_music_tracks" class="btn btn-warning btn-sm text-white text-start py-2">
+            <i class="bi bi-music-note-beamed me-1"></i> 5. Update Music Tracks
+          </button>
+        </form>
+      </div>
+
+      <div class="col-12 col-md-6 col-lg-4">
+        <form method="post" class="d-grid">
+          {% csrf_token %}
+          <button type="submit" name="run_all" class="btn btn-dark btn-sm text-start py-2 fw-bold">
+            <i class="bi bi-play-circle-fill me-1"></i> Run All Tasks Sequentially
+          </button>
+        </form>
+      </div>
     </div>
   </div>
 </div>
 
-{% if results %}
-  <div class="mt-4 p-3 bg-light rounded border">
-    <h2 class="mb-3">Task Results: {{ task_name }}</h2>
-    <pre class="bg-white p-3 rounded" style="white-space: pre-wrap; word-wrap: break-word;">{{ results_text }}</pre>
-  </div>
-{% endif %}
-
-<div class="mt-5">
-  <h2 class="mb-3">Recent Task History</h2>
-  <div class="table-responsive">
-    <table class="table table-sm table-bordered align-middle">
+<div class="mt-4">
+  <h2 class="h5 mb-3">Task History</h2>
+  <div class="table-responsive bg-white rounded border shadow-sm">
+    <table class="table table-sm table-hover align-middle mb-0">
       <thead class="table-light">
         <tr>
-          <th>Start</th>
-          <th>End</th>
           <th>Task</th>
           <th>Status</th>
+          <th>Started</th>
+          <th>Duration</th>
           <th>User</th>
           <th>Channels</th>
+          <th class="text-end">Result</th>
         </tr>
       </thead>
       <tbody>
         {% for entry in history_entries %}
           <tr>
-            <td>{{ entry.started_at }}</td>
-            <td>{% if entry.ended_at %}{{ entry.ended_at }}{% else %}-{% endif %}</td>
-            <td>{{ entry.get_task_type_display }}</td>
-            <td>{{ entry.get_status_display }}</td>
-            <td>{{ entry.user }}</td>
+            <td class="fw-semibold">{{ entry.get_task_type_display }}</td>
+            <td>
+              {% if entry.status == 'running' %}
+                <span class="badge bg-primary">
+                  <span class="spinner-border spinner-border-sm me-1" role="status" style="width: 0.75rem; height: 0.75rem;"></span>
+                  Running
+                </span>
+              {% elif entry.status == 'completed' %}
+                <span class="badge bg-success">Completed</span>
+              {% elif entry.status == 'failed' %}
+                <span class="badge bg-danger">Failed</span>
+              {% else %}
+                <span class="badge bg-secondary">{{ entry.get_status_display }}</span>
+              {% endif %}
+            </td>
+            <td><small class="text-muted">{{ entry.started_at|date:"Y-m-d H:i:s" }}</small></td>
+            <td>
+              {% if entry.ended_at %}
+                <small>{{ entry.duration }}</small>
+              {% else %}
+                <small class="text-muted">in progress</small>
+              {% endif %}
+            </td>
+            <td><small>{{ entry.user.username|default:"System" }}</small></td>
             <td>
               {% if entry.channels %}
                 {% if 'all' in entry.channels %}
-                  All
+                  <span class="badge bg-secondary">All</span>
                 {% else %}
-                  {{ entry.channels|join:", " }}
+                  <small>{{ entry.channels|join:", " }}</small>
                 {% endif %}
               {% else %}
-                -
+                <span class="text-muted">-</span>
+              {% endif %}
+            </td>
+            <td class="text-end">
+              {% if entry.result %}
+                <button type="button" class="btn btn-outline-secondary btn-xs py-0 px-2" style="font-size: 0.8rem;" data-bs-toggle="collapse" data-bs-target="#result_{{ entry.id }}">
+                  View
+                </button>
+              {% else %}
+                <span class="text-muted">-</span>
               {% endif %}
             </td>
           </tr>
+          {% if entry.result %}
+            <tr class="collapse" id="result_{{ entry.id }}">
+              <td colspan="7" class="bg-light p-3">
+                <div class="small fw-semibold text-muted mb-1">Execution Output / Error (ID #{{ entry.id }}):</div>
+                <pre class="bg-white p-2 border rounded small mb-0" style="max-height: 250px; overflow-y: auto; white-space: pre-wrap; word-wrap: break-word;">{{ entry.result }}</pre>
+              </td>
+            </tr>
+          {% endif %}
         {% empty %}
           <tr>
-            <td colspan="6" class="text-center">No task history yet.</td>
+            <td colspan="7" class="text-center py-4 text-muted">No task history yet.</td>
           </tr>
         {% endfor %}
       </tbody>

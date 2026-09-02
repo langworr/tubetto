@@ -37,6 +37,7 @@ db.sqlite3
 *.sqlite3*
 media/
 staticfiles/
+tubetto/logs
 
 # VS Code
 .vscode/

@@ -46,6 +46,7 @@ INSTALLED_APPS = [
     'rest_framework',
     'drf_spectacular',
 
+    'django_q',
     'tubetto',
     'videos',
     'music'
@@ -157,6 +158,48 @@ STATIC_ROOT = BASE_DIR / 'staticfiles'
 # MEDIA_URL = 'media/'
 MEDIA_ROOT = BASE_DIR / 'media'
 DATA_DIR = Path(os.environ.get('DATA_DIR', BASE_DIR / 'private'))
+LOGS_DIR = Path(os.environ.get('LOGS_DIR', BASE_DIR / 'logs'))
+LOGS_DIR.mkdir(parents=True, exist_ok=True)
+
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'formatters': {
+        'verbose': {
+            'format': '[{asctime}] {levelname} [{name}:{lineno}] {message}',
+            'style': '{',
+        },
+        'simple': {
+            'format': '[{asctime}] {levelname} {message}',
+            'style': '{',
+        },
+    },
+    'handlers': {
+        'console': {
+            'class': 'logging.StreamHandler',
+            'formatter': 'simple',
+        },
+        'tasks_file': {
+            'level': 'INFO',
+            'class': 'logging.FileHandler',
+            'filename': str(LOGS_DIR / 'tasks.log'),
+            'formatter': 'verbose',
+            'encoding': 'utf-8',
+        },
+    },
+    'loggers': {
+        'tubetto.tasks': {
+            'handlers': ['console', 'tasks_file'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+        'tubetto.services': {
+            'handlers': ['console', 'tasks_file'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+    },
+}
 
 CACHES = {
     'default': {
@@ -215,3 +258,17 @@ if not DEBUG:
 SECURE_REFERRER_POLICY = 'strict-origin-when-cross-origin'
 # pylint: disable=line-too-long
 CONTENT_SECURITY_POLICY = "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; media-src 'self' https:; connect-src 'self' https:; frame-src 'self' https: www.youtube.com;"  # noqa: E501
+
+# Django Q configuration
+Q_CLUSTER = {
+    'name': 'tubetto_tasks',
+    'workers': int(os.environ.get('Q_CLUSTER_WORKERS', 4)),
+    'recycle': 500,
+    'timeout': int(os.environ.get('Q_CLUSTER_TIMEOUT', 1800)),
+    'retry': int(os.environ.get('Q_CLUSTER_RETRY', 2000)),
+    'queue_limit': 50,
+    'bulk': 10,
+    'orm': 'default',
+    'catch_up': False,
+    'sync': False,
+}
